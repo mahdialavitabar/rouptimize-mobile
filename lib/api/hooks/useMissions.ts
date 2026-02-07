@@ -1,3 +1,4 @@
+import { AxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 
 import { useAuth } from '@/lib/auth';
@@ -77,8 +78,15 @@ export function useMissions(params?: MissionsQueryParams): UseMissionsResult {
       // No driverId and no vehicle assignment - return empty
       setMissions([]);
     } catch (err) {
+      const isNetwork = err instanceof AxiosError && !err.response;
       setError(
-        err instanceof Error ? err : new Error('Failed to fetch missions'),
+        isNetwork
+          ? new Error(
+              'Unable to connect to server. Check your internet connection and try again.',
+            )
+          : err instanceof Error
+            ? err
+            : new Error('Failed to fetch missions'),
       );
     } finally {
       setLoading(false);

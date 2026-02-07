@@ -29,6 +29,10 @@ interface UseUpdateUserReturn extends UseUpdateUserState {
 
 function extractErrorMessage(error: unknown): string {
   if (error instanceof AxiosError) {
+    // Network error (no response from server)
+    if (!error.response) {
+      return 'Unable to connect to server. Check your internet connection and try again.';
+    }
     const apiError = error.response?.data as ApiError | undefined;
     if (apiError?.message) {
       return Array.isArray(apiError.message)
@@ -45,7 +49,11 @@ function extractErrorMessage(error: unknown): string {
   return 'An unexpected error occurred';
 }
 
-export function useUser(id: string): UseUserState {
+interface UseUserReturn extends UseUserState {
+  refetch: () => Promise<void>;
+}
+
+export function useUser(id: string): UseUserReturn {
   const [state, setState] = useState<UseUserState>({
     data: null,
     error: null,
@@ -69,7 +77,7 @@ export function useUser(id: string): UseUserState {
     fetchUser();
   }, [fetchUser]);
 
-  return state;
+  return { ...state, refetch: fetchUser };
 }
 
 export function useUpdateUser(): UseUpdateUserReturn {

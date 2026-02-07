@@ -14,12 +14,12 @@ import { Text } from '@/components/ui/text';
 import { useUpdateUser, useUser } from '@/lib/api/hooks';
 import { useAuth } from '@/lib/auth';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, View } from 'react-native';
+import { ActivityIndicator, Alert, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function Profile() {
   const { user: jwtUser, signOut } = useAuth();
-  const { data: user, isLoading, error } = useUser(jwtUser?.sub || '');
+  const { data: user, isLoading, error, refetch } = useUser(jwtUser?.sub || '');
   const { mutate: updateUser, isLoading: isUpdating } = useUpdateUser();
 
   const [formData, setFormData] = useState({
@@ -115,6 +115,14 @@ export default function Profile() {
           <Text className="mt-2 text-muted-foreground text-center">
             {error}
           </Text>
+          <TouchableOpacity
+            onPress={refetch}
+            className="mt-6 rounded-lg bg-primary px-6 py-3"
+          >
+            <Text className="font-medium text-primary-foreground">
+              Try Again
+            </Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );

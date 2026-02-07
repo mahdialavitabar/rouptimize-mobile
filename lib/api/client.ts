@@ -64,6 +64,12 @@ apiClient.interceptors.request.use(
 
 let isRefreshing = false;
 let failedQueue: any[] = [];
+// Shared promise so that concurrent callers (interceptor + tryRefreshTokens)
+// de-duplicate into a single network request, preventing "token reuse" revocation.
+let activeRefreshPromise: Promise<{
+  access_token: string;
+  refresh_token: string;
+} | null> | null = null;
 
 const processQueue = (error: any, token: string | null = null) => {
   failedQueue.forEach((prom) => {
@@ -75,6 +81,45 @@ const processQueue = (error: any, token: string | null = null) => {
   });
 
   failedQueue = [];
+};
+
+/**
+ * Single, de-duplicated refresh call shared by the 401 interceptor AND
+ * `tryRefreshTokens` (app-start / resume).  If a refresh is already
+ * in-flight the same promise is returned so only ONE network request
+ * hits the backend per refresh-token value.
+ */
+const doRefresh = (): Promise<{
+  access_token: string;
+  refresh_token: string;
+} | null> => {
+  if (activeRefreshPromise) return activeRefreshPromise;
+
+  activeRefreshPromise = (async () => {
+    const refreshToken = await storage.getRefreshToken();
+    if (!refreshToken) {
+      return null;
+    }
+
+    const response = await axios.post(
+      `${getBaseUrl()}/auth/mobile/refresh`,
+      { refresh_token: refreshToken },
+      { timeout: 15000 },
+    );
+
+    const { access_token, refresh_token } = response.data;
+
+    await storage.setAccessToken(access_token);
+    await storage.setRefreshToken(refresh_token);
+
+    apiClient.defaults.headers.common.Authorization = `Bearer ${access_token}`;
+
+    return { access_token, refresh_token };
+  })().finally(() => {
+    activeRefreshPromise = null;
+  });
+
+  return activeRefreshPromise;
 };
 
 apiClient.interceptors.response.use(
@@ -111,30 +156,14 @@ apiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const refreshToken = await storage.getRefreshToken();
-        if (!refreshToken) {
+        const result = await doRefresh();
+
+        if (!result) {
           throw new Error('No refresh token available');
         }
 
-        // Use /auth/mobile/refresh for mobile app (accepts body tokens)
-        // Not /auth/refresh which is for web and expects cookies
-        const response = await axios.post(
-          `${getBaseUrl()}/auth/mobile/refresh`,
-          {
-            refresh_token: refreshToken,
-          },
-          { timeout: 15000 },
-        );
-
-        const { access_token, refresh_token } = response.data;
-
-        await storage.setAccessToken(access_token);
-        await storage.setRefreshToken(refresh_token);
-
-        apiClient.defaults.headers.common.Authorization = `Bearer ${access_token}`;
-        originalRequest.headers.Authorization = `Bearer ${access_token}`;
-
-        processQueue(null, access_token);
+        originalRequest.headers.Authorization = `Bearer ${result.access_token}`;
+        processQueue(null, result.access_token);
         return apiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
@@ -185,34 +214,16 @@ export const clearAuthTokens = async (): Promise<void> => {
  * Attempt to refresh the access token using the stored refresh token.
  * Used during app initialization when access token is expired but refresh token may be valid.
  * Returns the new tokens if successful, null if refresh fails.
+ *
+ * Uses the same de-duplicated `doRefresh` as the 401 interceptor so
+ * concurrent calls never hit the backend twice with the same token.
  */
 export const tryRefreshTokens = async (): Promise<{
   access_token: string;
   refresh_token: string;
 } | null> => {
   try {
-    const refreshToken = await storage.getRefreshToken();
-    if (!refreshToken) {
-      return null;
-    }
-
-    const response = await axios.post(
-      `${getBaseUrl()}/auth/mobile/refresh`,
-      {
-        refresh_token: refreshToken,
-      },
-      { timeout: 15000 },
-    );
-
-    const { access_token, refresh_token } = response.data;
-
-    await storage.setAccessToken(access_token);
-    await storage.setRefreshToken(refresh_token);
-
-    // Update default header for future requests
-    apiClient.defaults.headers.common.Authorization = `Bearer ${access_token}`;
-
-    return { access_token, refresh_token };
+    return await doRefresh();
   } catch (error) {
     // Only clear tokens on explicit auth rejection (400/401/403).
     // Network errors should NOT clear tokens – the refresh token may
