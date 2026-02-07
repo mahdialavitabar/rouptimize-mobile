@@ -32,6 +32,10 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+.env.development
+.env.production
+!.env.example
 
 # Firebase service account files (should never be in mobile app)
 *-firebase-adminsdk-*.json

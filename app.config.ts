@@ -2,13 +2,13 @@ import * as dotenv from 'dotenv';
 import { ConfigContext, ExpoConfig } from 'expo/config';
 import * as path from 'path';
 
-// Load env from root (try .env.development first, then .env)
+// Load env from project root (try .env.development first, then .env)
 const isDevelopment =
   !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
 const envFile = isDevelopment ? '.env.development' : '.env';
-dotenv.config({ path: path.resolve(__dirname, `../../${envFile}`) });
-// Also try loading root .env as fallback
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, `./${envFile}`) });
+// Also try loading .env as fallback
+dotenv.config({ path: path.resolve(__dirname, './.env') });
 
 // API URL configuration - prioritize EXPO_PUBLIC_API_URL env var
 const API_URL =
