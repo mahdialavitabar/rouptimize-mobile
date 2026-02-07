@@ -49,3 +49,13 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Docker - volume data (created by docker-compose)
+mosquitto/data/
+mosquitto/log/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

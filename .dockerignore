@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build outputs
+android/
+ios/
+dist/
+.expo/
+
+# Environment files (use docker-compose env_file instead)
+.env
+.env.local
+.env.development
+.env.production
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test and coverage
+coverage/
+__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Documentation
+README.md
+docs/
+
+# Assets (large files not needed for Docker services)
+assets/
+
+# Expo/EAS
+eas.json
+*.keystore
+*.jks
+
+# Firebase/credentials
+*.json
+!package.json
+!tsconfig.json
+!components.json
+
+# Lock files (use package.json)
+bun.lock
+package-lock.json
+yarn.lock
