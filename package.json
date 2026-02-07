@@ -2,19 +2,16 @@
   "name": "rouptimize-mobile",
   "main": "expo-router/entry",
   "version": "1.0.0",
-  "expo": {
-    "autolinking": {
-      "searchPaths": [
-        "./node_modules"
-      ]
-    }
-  },
   "scripts": {
     "start": "bun --env-file=./.env.development expo start",
     "android": "bun --env-file=./.env.development expo run:android",
     "ios": "bun --env-file=./.env.development expo run:ios",
     "web": "bun --env-file=./.env.development expo start --web",
     "lint": "bun expo lint",
+    "docker:dev": "docker compose --env-file .env.development up -d",
+    "docker:prod": "docker compose --env-file .env up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
     "expo:prebuild": "bun expo prebuild",
     "expo:prebuild:clean": "bun expo prebuild --clean",
     "expo:build:android": "bun expo prebuild --platform android --clean",
