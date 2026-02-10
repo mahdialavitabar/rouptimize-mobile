@@ -8,6 +8,7 @@ export default function TrackingStackLayout() {
         name="index"
         options={{
           title: 'Tracking',
+          headerShown: false,
         }}
       />
     </Stack>

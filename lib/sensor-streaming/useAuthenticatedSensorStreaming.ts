@@ -4,15 +4,17 @@ import { AppState, AppStateStatus, Platform } from 'react-native';
 import { vehicleAssignmentService } from '../api/services/vehicle-assignment.service';
 import { useAuth } from '../auth';
 import {
-  startBackgroundLocationTracking,
-  stopBackgroundLocationTracking,
+    startBackgroundLocationTracking,
+    stopBackgroundLocationTracking,
 } from './backgroundLocationTask';
 import { ClickHouseSensorClient } from './clickhouseSensorClient';
 import { getOrCreateDeviceId } from './deviceId';
 import { useSensorPermission } from './SensorPermissionContext';
 import { SensorQueue } from './sensorQueue';
 import { SensorReader } from './sensorReader';
-import { useSensorStreamingStatus } from './SensorStreamingStatusContext';
+import {
+    useSensorStreamingStatus,
+} from './SensorStreamingStatusContext';
 import { SensorBatch, SensorReading } from './types';
 
 function parseNumber(value: string | undefined, fallback: number): number {
@@ -42,7 +44,14 @@ export function useAuthenticatedSensorStreaming(
   const { isNavigating } = options;
   const { isAuthenticated, isLoading, user } = useAuth();
   const { isAllowed: hasPermission, requestPermission } = useSensorPermission();
-  const { reportSuccess, reportFailure, setOff } = useSensorStreamingStatus();
+  const {
+    reportSuccess,
+    reportFailure,
+    reportReadings,
+    reportBatchSent,
+    reportBatchFailed,
+    setOff,
+  } = useSensorStreamingStatus();
   const startedRef = useRef(false);
   const cleanupRef = useRef<(() => void) | null>(null);
   const sensorClientRef = useRef<ClickHouseSensorClient | undefined>(undefined);
@@ -238,6 +247,8 @@ export function useAuthenticatedSensorStreaming(
         sampleRateHz,
         onReading: (r) => {
           buffer.push(r);
+          // Report individual reading to throughput tracker
+          reportReadings(1, r.sensor as 'accel' | 'gyro' | 'location');
         },
         onLocationError: (error) => {
           console.warn('[SensorStreaming] Location error:', error);
@@ -279,7 +290,14 @@ export function useAuthenticatedSensorStreaming(
             readings,
           };
 
-          void sensorClient?.enqueueAndPublishBatch(batch);
+          sensorClient?.enqueueAndPublishBatch(batch).then(
+            () => {
+              reportBatchSent(readings.length);
+            },
+            () => {
+              reportBatchFailed();
+            },
+          );
         },
         Math.max(50, batchIntervalMs),
       );
@@ -314,6 +332,9 @@ export function useAuthenticatedSensorStreaming(
     hasPermission,
     reportSuccess,
     reportFailure,
+    reportReadings,
+    reportBatchSent,
+    reportBatchFailed,
     setOff,
   ]);
 }

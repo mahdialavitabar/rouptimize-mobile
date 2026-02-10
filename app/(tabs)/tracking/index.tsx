@@ -1,25 +1,42 @@
 import Mapbox, {
+    Atmosphere,
     Camera,
+    FillExtrusionLayer,
+    Light,
     LineLayer,
     LocationPuck,
     MapView,
     ShapeSource,
+    VectorSource
 } from '@rnmapbox/maps';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, StyleSheet, View, useColorScheme } from 'react-native';
+import {
+    Alert,
+    Linking,
+    StyleSheet,
+    View,
+    useColorScheme
+} from 'react-native';
+
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import {
     EnhancedMissionMarker,
     MapControls,
+    MapStyleSelector,
     MissionInfoPanel,
     RouteEndpointMarker,
     SelectedMissionCard,
+    SensorDataOverlay,
+    type MapStyleId,
+    type MapStyleOption
 } from '@/components/map/index';
 import { StreamingStatusIndicator } from '@/components/map/StreamingStatusIndicator';
+import { Text } from '@/components/ui/text';
 import { useMissions, useRoutes } from '@/lib/api/hooks';
 import type { Mission } from '@/lib/api/types';
 import { openNativeNavigation } from '@/lib/navigation/openNativeNavigation';
@@ -30,25 +47,149 @@ Mapbox.setAccessToken(accessToken);
 
 // Default center (Tehran)
 const DEFAULT_CENTER: [number, number] = [51.389, 35.6892];
-const DEFAULT_ZOOM = 13;
+const DEFAULT_ZOOM = 14;
+
+// ---------------------------------------------------------------------------
+// Speed display component (shows current speed in km/h when navigating)
+// ---------------------------------------------------------------------------
+
+function SpeedDisplay({
+  speed,
+  isDark,
+}: {
+  speed: number | null;
+  isDark: boolean;
+}) {
+  if (speed === null || speed < 0) return null;
+
+  const kmh = Math.round(speed * 3.6); // m/s → km/h
+
+  return (
+    <View
+      style={[
+        styles.speedContainer,
+        {
+          backgroundColor: isDark
+            ? 'rgba(17, 24, 39, 0.92)'
+            : 'rgba(255, 255, 255, 0.95)',
+          borderColor: isDark ? '#374151' : '#DADCE0',
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.speedValue,
+          { color: isDark ? '#F3F4F6' : '#202124' },
+        ]}
+      >
+        {kmh}
+      </Text>
+      <Text
+        style={[
+          styles.speedUnit,
+          { color: isDark ? '#9CA3AF' : '#5F6368' },
+        ]}
+      >
+        km/h
+      </Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Heading display (shows current bearing when navigating)
+// ---------------------------------------------------------------------------
+
+function HeadingDisplay({
+  heading,
+  isDark,
+}: {
+  heading: number;
+  isDark: boolean;
+}) {
+  const cardinalDirection = (deg: number) => {
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
+    return dirs[idx];
+  };
+
+  return (
+    <View
+      style={[
+        styles.headingContainer,
+        {
+          backgroundColor: isDark
+            ? 'rgba(17, 24, 39, 0.92)'
+            : 'rgba(255, 255, 255, 0.95)',
+          borderColor: isDark ? '#374151' : '#DADCE0',
+        },
+      ]}
+    >
+      <MaterialIcons
+        name="explore"
+        size={14}
+        color={isDark ? '#D1D5DB' : '#5F6368'}
+      />
+      <Text
+        style={[
+          styles.headingValue,
+          { color: isDark ? '#F3F4F6' : '#202124' },
+        ]}
+      >
+        {Math.round(heading)}°
+      </Text>
+      <Text
+        style={[
+          styles.headingDir,
+          { color: isDark ? '#9CA3AF' : '#80868B' },
+        ]}
+      >
+        {cardinalDirection(heading)}
+      </Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main TrackingScreen
+// ---------------------------------------------------------------------------
 
 export default function TrackingScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const cameraRef = useRef<Camera>(null);
+
+  // ── State ──────────────────────────────────────────────────────────
   const [hasPermission, setHasPermission] = useState(false);
-  const [userLocation, setUserLocation] = useState<[number, number] | null>(
-    null,
-  );
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [userSpeed, setUserSpeed] = useState<number | null>(null);
   const [showMissions, setShowMissions] = useState(true);
   const [showRoute, setShowRoute] = useState(true);
   const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
   const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM);
 
+  // Camera tracking state
+  const [cameraHeading, setCameraHeading] = useState(0);
+  const [cameraPitch, setCameraPitch] = useState(0);
+
+  // Map features state
+  const [selectedStyleId, setSelectedStyleId] = useState<MapStyleId>(
+    isDark ? 'dark' : 'streets',
+  );
+  const [mapStyleURL, setMapStyleURL] = useState(
+    isDark
+      ? 'mapbox://styles/mapbox/dark-v11'
+      : 'mapbox://styles/mapbox/streets-v12',
+  );
+  const [showStyleSelector, setShowStyleSelector] = useState(false);
+  const [trafficEnabled, setTrafficEnabled] = useState(false);
+  const [threeDEnabled, setThreeDEnabled] = useState(true);
+
   // Get today's date
   const today = new Date().toISOString().split('T')[0];
 
-  // Fetch today's missions and routes
+  // ── Data ───────────────────────────────────────────────────────────
   const { missions } = useMissions({ date: today });
   const { routes } = useRoutes({ date: today });
 
@@ -82,7 +223,6 @@ export default function TrackingScreen() {
     if (!activeRoute?.vehicle) return null;
     const vehicle = activeRoute.vehicle as any;
 
-    // Parse start/end points from vehicle (format: "lng,lat")
     const parsePoint = (point: string | undefined): [number, number] | null => {
       if (!point) return null;
       const parts = point.split(',').map((p) => parseFloat(p.trim()));
@@ -141,7 +281,7 @@ export default function TrackingScreen() {
     };
   }, [mappableMissions, routeEndpoints, userLocation]);
 
-  // Get initial user location for camera positioning (permission handled by SensorPermissionContext)
+  // ── Location init ──────────────────────────────────────────────────
   useEffect(() => {
     const getInitialLocation = async () => {
       try {
@@ -153,6 +293,9 @@ export default function TrackingScreen() {
           accuracy: Location.Accuracy.High,
         });
         setUserLocation([location.coords.longitude, location.coords.latitude]);
+        if (location.coords.speed !== null) {
+          setUserSpeed(location.coords.speed);
+        }
       } catch {
         // Use default center if location fails
       }
@@ -161,7 +304,38 @@ export default function TrackingScreen() {
     getInitialLocation();
   }, []);
 
-  // Camera controls
+  // ── Track user location for speed display ─────────────────────────
+  useEffect(() => {
+    if (!hasPermission || !isNavigating) return;
+
+    let subscription: Location.LocationSubscription | undefined;
+
+    const startWatching = async () => {
+      try {
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 2000,
+            distanceInterval: 0,
+          },
+          (loc) => {
+            setUserLocation([loc.coords.longitude, loc.coords.latitude]);
+            setUserSpeed(loc.coords.speed);
+          },
+        );
+      } catch {
+        // Ignore errors – sensor reader also watches location
+      }
+    };
+
+    startWatching();
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [hasPermission, isNavigating]);
+
+  // ── Camera controls ────────────────────────────────────────────────
   const centerOnUser = useCallback(async () => {
     try {
       const location = await Location.getCurrentPositionAsync({
@@ -174,16 +348,21 @@ export default function TrackingScreen() {
       setUserLocation(coords);
       cameraRef.current?.setCamera({
         centerCoordinate: coords,
-        zoomLevel: 16,
+        zoomLevel: 17,
+        heading: 0,
+        pitch: 0,
         animationDuration: 800,
+        animationMode: 'flyTo',
       });
     } catch {
-      // Fall back to last known location
       if (userLocation && cameraRef.current) {
         cameraRef.current.setCamera({
           centerCoordinate: userLocation,
-          zoomLevel: 16,
+          zoomLevel: 17,
+          heading: 0,
+          pitch: 0,
           animationDuration: 800,
+          animationMode: 'flyTo',
         });
       }
     }
@@ -194,16 +373,16 @@ export default function TrackingScreen() {
     setZoomLevel(newZoom);
     cameraRef.current?.setCamera({
       zoomLevel: newZoom,
-      animationDuration: 300,
+      animationDuration: 250,
     });
   }, [zoomLevel]);
 
   const zoomOut = useCallback(() => {
-    const newZoom = Math.max(zoomLevel - 1, 5);
+    const newZoom = Math.max(zoomLevel - 1, 3);
     setZoomLevel(newZoom);
     cameraRef.current?.setCamera({
       zoomLevel: newZoom,
-      animationDuration: 300,
+      animationDuration: 250,
     });
   }, [zoomLevel]);
 
@@ -218,17 +397,50 @@ export default function TrackingScreen() {
     }
   }, [allBounds]);
 
-  // Mission interactions
+  const resetBearing = useCallback(() => {
+    cameraRef.current?.setCamera({
+      heading: 0,
+      pitch: 0,
+      animationDuration: 400,
+    });
+  }, []);
+
+  // ── Camera state tracking ─────────────────────────────────────────
+  const handleCameraChanged = useCallback(
+    (state: {
+      properties: {
+        center: number[];
+        zoom: number;
+        heading: number;
+        pitch: number;
+      };
+    }) => {
+      const { heading, pitch, zoom } = state.properties;
+      setCameraHeading(heading);
+      setCameraPitch(pitch);
+      setZoomLevel(zoom);
+    },
+    [],
+  );
+
+  // ── Map style ─────────────────────────────────────────────────────
+  const handleSelectStyle = useCallback((style: MapStyleOption) => {
+    setSelectedStyleId(style.id);
+    setMapStyleURL(style.styleURL);
+    setShowStyleSelector(false);
+  }, []);
+
+  // ── Mission interactions ───────────────────────────────────────────
   const selectMission = useCallback((mission: Mission) => {
     setSelectedMission(mission);
     cameraRef.current?.setCamera({
       centerCoordinate: [mission.longitude, mission.latitude],
-      zoomLevel: 16,
+      zoomLevel: 17,
       animationDuration: 500,
+      animationMode: 'flyTo',
     });
   }, []);
 
-  // Navigate using native navigation app
   const navigateToMission = useCallback((mission: Mission) => {
     openNativeNavigation({
       latitude: mission.latitude,
@@ -264,17 +476,32 @@ export default function TrackingScreen() {
 
   const centerCoordinate = userLocation ?? DEFAULT_CENTER;
 
+  // Determine if the current style supports 3D buildings well
+  const isSatelliteStyle =
+    selectedStyleId === 'satellite' || selectedStyleId === 'satellite-streets';
+
   return (
-    <View className="flex-1">
-      {/* Map */}
+    <View style={styles.rootContainer}>
+      {/* ── Map ───────────────────────────────────────────────────── */}
       <MapView
         style={styles.map}
-        styleURL={
-          colorScheme === 'dark'
-            ? 'mapbox://styles/mapbox/navigation-night-v1'
-            : 'mapbox://styles/mapbox/streets-v12'
-        }
+        styleURL={mapStyleURL}
         onPress={() => setSelectedMission(null)}
+        onCameraChanged={handleCameraChanged}
+        compassEnabled={false} // We use our own compass
+        compassFadeWhenNorth
+        scaleBarEnabled
+        scaleBarPosition={{ bottom: 36, left: 12 }}
+        logoEnabled
+        logoPosition={{ bottom: 12, left: 12 }}
+        attributionEnabled
+        attributionPosition={{ bottom: 12, right: 12 }}
+        pitchEnabled
+        rotateEnabled
+        zoomEnabled
+        scrollEnabled
+        projection="mercator"
+        localizeLabels={{ locale: 'current' }}
       >
         <Camera
           ref={cameraRef}
@@ -284,7 +511,28 @@ export default function TrackingScreen() {
           animationDuration={1000}
         />
 
-        {/* User location puck */}
+        {/* ── Atmosphere (sky effect for globe/high zoom-out) ──── */}
+        <Atmosphere
+          style={{
+            color: isDark ? '#242B4B' : '#D8E5F0',
+            highColor: isDark ? '#161B36' : '#72B4E8',
+            spaceColor: isDark ? '#0B0F26' : '#A5CFEE',
+            horizonBlend: 0.08,
+            starIntensity: isDark ? 0.3 : 0,
+          }}
+        />
+
+        {/* ── Light for 3D building extrusions ─────────────────── */}
+        <Light
+          style={{
+            anchor: 'map',
+            position: [1.5, 210, 30],
+            color: isDark ? '#E8E8E8' : '#FFFFFF',
+            intensity: isDark ? 0.3 : 0.4,
+          }}
+        />
+
+        {/* ── User location puck (Google-style) ────────────────── */}
         {hasPermission && (
           <LocationPuck
             puckBearing="heading"
@@ -292,32 +540,210 @@ export default function TrackingScreen() {
             visible
             pulsing={{
               isEnabled: true,
-              color: '#3B82F6',
-              radius: 50,
+              color: '#4285F4',
+              radius: 70,
             }}
           />
         )}
 
-        {/* Route line with gradient effect */}
-        {showRoute && activeRouteGeometry && (
-          <ShapeSource id="route-source" shape={activeRouteGeometry}>
-            {/* Route shadow */}
-            <LineLayer
-              id="route-shadow"
+        {/* ── 3D Buildings ─────────────────────────────────────── */}
+        {threeDEnabled && !isSatelliteStyle && (
+          <VectorSource
+            id="building-source-3d"
+            url="mapbox://mapbox.mapbox-streets-v8"
+          >
+            <FillExtrusionLayer
+              id="3d-buildings"
+              sourceLayerID="building"
+              minZoomLevel={14}
+              maxZoomLevel={24}
+              filter={['==', 'extrude', 'true']}
               style={{
-                lineColor: 'rgba(0,0,0,0.2)',
-                lineWidth: 8,
-                lineBlur: 3,
+                fillExtrusionColor: isDark ? '#2A3042' : '#DDE1E8',
+                fillExtrusionHeight: [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  14,
+                  0,
+                  14.5,
+                  ['get', 'height'],
+                ],
+                fillExtrusionBase: [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  14,
+                  0,
+                  14.5,
+                  ['get', 'min_height'],
+                ],
+                fillExtrusionOpacity: isDark ? 0.7 : 0.55,
+                fillExtrusionVerticalGradient: true,
+              }}
+            />
+          </VectorSource>
+        )}
+
+        {/* ── Traffic Layer ─────────────────────────────────────── */}
+        {trafficEnabled && (
+          <VectorSource
+            id="traffic-source"
+            url="mapbox://mapbox.mapbox-traffic-v1"
+          >
+            {/* Motorway/trunk traffic */}
+            <LineLayer
+              id="traffic-motorway"
+              sourceLayerID="traffic"
+              filter={[
+                'all',
+                ['==', '$type', 'LineString'],
+                ['in', 'class', 'motorway', 'trunk'],
+              ]}
+              style={{
+                lineColor: [
+                  'match',
+                  ['get', 'congestion'],
+                  'low',
+                  '#34A853',
+                  'moderate',
+                  '#FBBC04',
+                  'heavy',
+                  '#EA4335',
+                  'severe',
+                  '#9B1B1B',
+                  '#34A853',
+                ],
+                lineWidth: [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  8,
+                  1,
+                  14,
+                  4,
+                  18,
+                  8,
+                ],
+                lineOpacity: 0.75,
                 lineCap: 'round',
                 lineJoin: 'round',
               }}
             />
-            {/* Main route line */}
+            {/* Primary/secondary traffic */}
+            <LineLayer
+              id="traffic-primary"
+              sourceLayerID="traffic"
+              filter={[
+                'all',
+                ['==', '$type', 'LineString'],
+                ['in', 'class', 'primary', 'secondary'],
+              ]}
+              style={{
+                lineColor: [
+                  'match',
+                  ['get', 'congestion'],
+                  'low',
+                  '#34A853',
+                  'moderate',
+                  '#FBBC04',
+                  'heavy',
+                  '#EA4335',
+                  'severe',
+                  '#9B1B1B',
+                  '#34A853',
+                ],
+                lineWidth: [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  10,
+                  0.5,
+                  14,
+                  2.5,
+                  18,
+                  6,
+                ],
+                lineOpacity: 0.65,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+            {/* Street-level traffic */}
+            <LineLayer
+              id="traffic-street"
+              sourceLayerID="traffic"
+              filter={[
+                'all',
+                ['==', '$type', 'LineString'],
+                ['!in', 'class', 'motorway', 'trunk', 'primary', 'secondary'],
+              ]}
+              minZoomLevel={13}
+              style={{
+                lineColor: [
+                  'match',
+                  ['get', 'congestion'],
+                  'low',
+                  '#34A853',
+                  'moderate',
+                  '#FBBC04',
+                  'heavy',
+                  '#EA4335',
+                  'severe',
+                  '#9B1B1B',
+                  '#34A853',
+                ],
+                lineWidth: [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  13,
+                  0.3,
+                  16,
+                  2,
+                  18,
+                  4,
+                ],
+                lineOpacity: 0.5,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </VectorSource>
+        )}
+
+        {/* ── Active route line with Google-like styling ────────── */}
+        {showRoute && activeRouteGeometry && (
+          <ShapeSource id="route-source" shape={activeRouteGeometry}>
+            {/* Route casing (outer border) */}
+            <LineLayer
+              id="route-casing"
+              style={{
+                lineColor: isDark ? '#1A3B6D' : '#1A73E8',
+                lineWidth: 10,
+                lineCap: 'round',
+                lineJoin: 'round',
+                lineOpacity: 0.35,
+              }}
+            />
+            {/* Route shadow */}
+            <LineLayer
+              id="route-shadow"
+              style={{
+                lineColor: 'rgba(0,0,0,0.15)',
+                lineWidth: 9,
+                lineBlur: 4,
+                lineCap: 'round',
+                lineJoin: 'round',
+                lineTranslate: [0, 2],
+              }}
+            />
+            {/* Main route line – Google blue */}
             <LineLayer
               id="route-line"
               style={{
-                lineColor: '#3B82F6',
-                lineWidth: 5,
+                lineColor: '#4285F4',
+                lineWidth: 6,
                 lineCap: 'round',
                 lineJoin: 'round',
               }}
@@ -327,8 +753,8 @@ export default function TrackingScreen() {
               id="route-border"
               belowLayerID="route-line"
               style={{
-                lineColor: '#1E40AF',
-                lineWidth: 7,
+                lineColor: '#1A73E8',
+                lineWidth: 8,
                 lineCap: 'round',
                 lineJoin: 'round',
               }}
@@ -336,7 +762,7 @@ export default function TrackingScreen() {
           </ShapeSource>
         )}
 
-        {/* Start point marker */}
+        {/* ── Route endpoint markers ──────────────────────────── */}
         {showRoute && routeEndpoints?.start && (
           <RouteEndpointMarker
             coordinate={routeEndpoints.start}
@@ -344,8 +770,6 @@ export default function TrackingScreen() {
             label="Start"
           />
         )}
-
-        {/* End point marker */}
         {showRoute && routeEndpoints?.end && (
           <RouteEndpointMarker
             coordinate={routeEndpoints.end}
@@ -354,7 +778,7 @@ export default function TrackingScreen() {
           />
         )}
 
-        {/* Mission markers */}
+        {/* ── Mission markers ─────────────────────────────────── */}
         {showMissions &&
           mappableMissions.map((mission, index) => (
             <EnhancedMissionMarker
@@ -369,10 +793,23 @@ export default function TrackingScreen() {
           ))}
       </MapView>
 
-      {/* Streaming Status Indicator */}
+      {/* ── Streaming Status Indicator (top-left) ──────────────── */}
       <StreamingStatusIndicator />
 
-      {/* Map Controls */}
+      {/* ── Sensor Data Overlay (below streaming indicator) ──────── */}
+      <SensorDataOverlay />
+
+      {/* ── Speed Display (bottom-left, when navigating) ──────── */}
+      {isNavigating && (
+        <View style={styles.bottomLeftInfo}>
+          <SpeedDisplay speed={userSpeed} isDark={isDark} />
+          {cameraHeading > 2 && (
+            <HeadingDisplay heading={cameraHeading} isDark={isDark} />
+          )}
+        </View>
+      )}
+
+      {/* ── Map Controls (Google-style) ────────────────────────── */}
       <MapControls
         onCenterOnUser={centerOnUser}
         onZoomIn={zoomIn}
@@ -380,11 +817,27 @@ export default function TrackingScreen() {
         onToggleMissions={() => setShowMissions(!showMissions)}
         onToggleRoute={() => setShowRoute(!showRoute)}
         onFitBounds={allBounds ? fitAllMarkers : undefined}
+        onOpenLayers={() => setShowStyleSelector(true)}
+        onResetBearing={resetBearing}
         showMissions={showMissions}
         showRoute={showRoute}
+        heading={cameraHeading}
+        pitch={cameraPitch}
       />
 
-      {/* Selected Mission Card */}
+      {/* ── Map Style Selector Modal ──────────────────────────── */}
+      <MapStyleSelector
+        visible={showStyleSelector}
+        selectedStyleId={selectedStyleId}
+        onSelectStyle={handleSelectStyle}
+        onClose={() => setShowStyleSelector(false)}
+        trafficEnabled={trafficEnabled}
+        onToggleTraffic={() => setTrafficEnabled(!trafficEnabled)}
+        threeDEnabled={threeDEnabled}
+        onToggle3D={() => setThreeDEnabled(!threeDEnabled)}
+      />
+
+      {/* ── Selected Mission Card ─────────────────────────────── */}
       {selectedMission && (
         <SelectedMissionCard
           mission={selectedMission}
@@ -395,7 +848,7 @@ export default function TrackingScreen() {
         />
       )}
 
-      {/* Mission Info Panel */}
+      {/* ── Mission Info Panel ────────────────────────────────── */}
       {mappableMissions.length > 0 && !selectedMission && (
         <MissionInfoPanel
           missions={mappableMissions}
@@ -406,8 +859,75 @@ export default function TrackingScreen() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
   map: {
     flex: 1,
+  },
+
+  // ── Speed display ─────────────────────────────────────────────────
+  bottomLeftInfo: {
+    position: 'absolute',
+    bottom: 100,
+    left: 12,
+    gap: 6,
+    zIndex: 5,
+  },
+  speedContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  speedValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    lineHeight: 22,
+  },
+  speedUnit: {
+    fontSize: 9,
+    fontWeight: '600',
+    marginTop: -1,
+  },
+
+  // ── Heading display ───────────────────────────────────────────────
+  headingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  headingValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  headingDir: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

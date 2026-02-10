@@ -1,5 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
     Animated,
     StyleSheet,
@@ -10,6 +10,10 @@ import {
 
 import { Text } from '@/components/ui/text';
 
+// ---------------------------------------------------------------------------
+// Google-Maps-style Map Controls
+// ---------------------------------------------------------------------------
+
 interface MapControlsProps {
   onCenterOnUser?: () => void;
   onZoomIn?: () => void;
@@ -17,9 +21,14 @@ interface MapControlsProps {
   onToggleMissions?: () => void;
   onToggleRoute?: () => void;
   onFitBounds?: () => void;
+  onOpenLayers?: () => void;
+  onResetBearing?: () => void;
   showMissions?: boolean;
   showRoute?: boolean;
-  position?: 'left' | 'right';
+  /** Current map heading in degrees – the compass shows when heading !== 0 */
+  heading?: number;
+  /** Current map pitch/tilt in degrees */
+  pitch?: number;
 }
 
 export function MapControls({
@@ -29,131 +38,171 @@ export function MapControls({
   onToggleMissions,
   onToggleRoute,
   onFitBounds,
+  onOpenLayers,
+  onResetBearing,
   showMissions = true,
   showRoute = true,
-  position = 'right',
+  heading = 0,
+  pitch = 0,
 }: MapControlsProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  const bgColor = isDark ? '#374151' : '#fff';
-  const iconColor = isDark ? '#fff' : '#374151';
-  const activeColor = '#3B82F6';
+  const cardBg = isDark ? '#1F2937' : '#FFFFFF';
+  const iconColor = isDark ? '#E5E7EB' : '#5F6368';
+  const activeAccent = '#4285F4'; // Google blue
+  const dividerColor = isDark ? '#374151' : '#EAEDF0';
+
+  // Compass is visible when heading OR pitch are non-zero
+  const showCompass = Math.abs(heading) > 2 || Math.abs(pitch) > 2;
 
   return (
-    <View
-      style={[
-        styles.controlsContainer,
-        position === 'left' ? styles.leftPosition : styles.rightPosition,
-      ]}
-    >
-      {/* Center on user */}
-      {onCenterOnUser && (
-        <ControlButton
-          icon="my-location"
-          onPress={onCenterOnUser}
-          bgColor={bgColor}
-          iconColor={activeColor}
-          tooltip="My Location"
-        />
-      )}
-
-      {/* Fit all markers */}
-      {onFitBounds && (
-        <ControlButton
-          icon="fit-screen"
-          onPress={onFitBounds}
-          bgColor={bgColor}
-          iconColor={iconColor}
-          tooltip="Fit All"
-        />
-      )}
-
-      {/* Zoom controls */}
-      {(onZoomIn || onZoomOut) && (
-        <View style={[styles.zoomGroup, { backgroundColor: bgColor }]}>
-          {onZoomIn && (
-            <TouchableOpacity
-              style={styles.zoomButton}
-              onPress={onZoomIn}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="add" size={24} color={iconColor} />
-            </TouchableOpacity>
-          )}
-          <View
-            style={[
-              styles.zoomDivider,
-              { backgroundColor: isDark ? '#4B5563' : '#E5E7EB' },
-            ]}
+    <>
+      {/* ── Top-right cluster: Layers, Compass, Toggle chips ──────────── */}
+      <View style={styles.topRight}>
+        {/* Layers button (square Google-style) */}
+        {onOpenLayers && (
+          <GMapButton
+            icon="layers"
+            onPress={onOpenLayers}
+            bgColor={cardBg}
+            iconColor={iconColor}
+            size={44}
+            borderRadius={8}
           />
-          {onZoomOut && (
-            <TouchableOpacity
-              style={styles.zoomButton}
-              onPress={onZoomOut}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="remove" size={24} color={iconColor} />
-            </TouchableOpacity>
+        )}
+
+        {/* Compass – auto-appears when map is rotated/tilted */}
+        {showCompass && onResetBearing && (
+          <CompassButton
+            heading={heading}
+            onPress={onResetBearing}
+            bgColor={cardBg}
+          />
+        )}
+
+        {/* Toggle chips: Missions / Route */}
+        <View style={styles.chipGroup}>
+          {onToggleMissions && (
+            <ToggleChip
+              icon="local-shipping"
+              label="Deliveries"
+              isActive={showMissions}
+              onPress={onToggleMissions}
+              activeColor={activeAccent}
+              isDark={isDark}
+            />
+          )}
+          {onToggleRoute && (
+            <ToggleChip
+              icon="route"
+              label="Route"
+              isActive={showRoute}
+              onPress={onToggleRoute}
+              activeColor={activeAccent}
+              isDark={isDark}
+            />
           )}
         </View>
-      )}
+      </View>
 
-      {/* Toggle missions */}
-      {onToggleMissions && (
-        <ControlButton
-          icon="local-shipping"
-          onPress={onToggleMissions}
-          bgColor={showMissions ? activeColor : bgColor}
-          iconColor={showMissions ? '#fff' : iconColor}
-          tooltip="Deliveries"
-        />
-      )}
+      {/* ── Right-side vertical cluster: Zoom + Fit ──────────────────── */}
+      <View style={styles.rightCenter}>
+        {(onZoomIn || onZoomOut) && (
+          <View style={[styles.zoomCard, { backgroundColor: cardBg }]}>
+            {onZoomIn && (
+              <TouchableOpacity
+                style={styles.zoomBtn}
+                onPress={onZoomIn}
+                activeOpacity={0.6}
+                hitSlop={{ top: 4, bottom: 2, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="add" size={22} color={iconColor} />
+              </TouchableOpacity>
+            )}
+            <View style={[styles.zoomDivider, { backgroundColor: dividerColor }]} />
+            {onZoomOut && (
+              <TouchableOpacity
+                style={styles.zoomBtn}
+                onPress={onZoomOut}
+                activeOpacity={0.6}
+                hitSlop={{ top: 2, bottom: 4, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="remove" size={22} color={iconColor} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
-      {/* Toggle route */}
-      {onToggleRoute && (
-        <ControlButton
-          icon="route"
-          onPress={onToggleRoute}
-          bgColor={showRoute ? activeColor : bgColor}
-          iconColor={showRoute ? '#fff' : iconColor}
-          tooltip="Route"
-        />
+        {onFitBounds && (
+          <GMapButton
+            icon="fit-screen"
+            onPress={onFitBounds}
+            bgColor={cardBg}
+            iconColor={iconColor}
+            size={44}
+            borderRadius={8}
+          />
+        )}
+      </View>
+
+      {/* ── Bottom-right: My Location FAB ────────────────────────────── */}
+      {onCenterOnUser && (
+        <View style={styles.bottomRight}>
+          <GMapButton
+            icon="my-location"
+            onPress={onCenterOnUser}
+            bgColor={cardBg}
+            iconColor={activeAccent}
+            size={48}
+            borderRadius={24}
+            elevated
+          />
+        </View>
       )}
-    </View>
+    </>
   );
 }
 
-interface ControlButtonProps {
+// ---------------------------------------------------------------------------
+// Reusable Google-style button
+// ---------------------------------------------------------------------------
+
+interface GMapButtonProps {
   icon: keyof typeof MaterialIcons.glyphMap;
   onPress: () => void;
   bgColor: string;
   iconColor: string;
-  tooltip?: string;
   size?: number;
+  iconSize?: number;
+  borderRadius?: number;
+  elevated?: boolean;
 }
 
-function ControlButton({
+function GMapButton({
   icon,
   onPress,
   bgColor,
   iconColor,
-  tooltip,
-  size = 48,
-}: ControlButtonProps) {
+  size = 44,
+  iconSize = 22,
+  borderRadius = 8,
+  elevated = false,
+}: GMapButtonProps) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
     Animated.spring(scaleAnim, {
-      toValue: 0.9,
+      toValue: 0.92,
       useNativeDriver: true,
+      friction: 8,
     }).start();
   };
 
   const handlePressOut = () => {
     Animated.spring(scaleAnim, {
       toValue: 1,
-      friction: 3,
+      friction: 5,
       useNativeDriver: true,
     }).start();
   };
@@ -162,30 +211,141 @@ function ControlButton({
     <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
       <TouchableOpacity
         style={[
-          styles.controlButton,
-          { backgroundColor: bgColor, width: size, height: size },
+          styles.gmapBtn,
+          {
+            backgroundColor: bgColor,
+            width: size,
+            height: size,
+            borderRadius,
+          },
+          elevated && styles.gmapBtnElevated,
         ]}
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         activeOpacity={1}
       >
-        <MaterialIcons name={icon} size={24} color={iconColor} />
+        <MaterialIcons name={icon} size={iconSize} color={iconColor} />
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-// Mission info panel for bottom of map
+// ---------------------------------------------------------------------------
+// Compass button that rotates with the map heading
+// ---------------------------------------------------------------------------
+
+function CompassButton({
+  heading,
+  onPress,
+  bgColor,
+}: {
+  heading: number;
+  onPress: () => void;
+  bgColor: string;
+}) {
+  const rotateAnim = useRef(new Animated.Value(-heading)).current;
+
+  useEffect(() => {
+    Animated.timing(rotateAnim, {
+      toValue: -heading,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  }, [heading, rotateAnim]);
+
+  const rotation = rotateAnim.interpolate({
+    inputRange: [-360, 360],
+    outputRange: ['-360deg', '360deg'],
+  });
+
+  return (
+    <TouchableOpacity
+      style={[styles.compassBtn, { backgroundColor: bgColor }]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Animated.View style={{ transform: [{ rotate: rotation }] }}>
+        <View style={styles.compassNeedle}>
+          {/* North triangle (red) */}
+          <View style={styles.compassNorth} />
+          {/* South triangle (gray) */}
+          <View style={styles.compassSouth} />
+        </View>
+      </Animated.View>
+      <View style={styles.compassCenter} />
+    </TouchableOpacity>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Toggle chip (Deliveries / Route)
+// ---------------------------------------------------------------------------
+
+function ToggleChip({
+  icon,
+  label,
+  isActive,
+  onPress,
+  activeColor,
+  isDark,
+}: {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  label: string;
+  isActive: boolean;
+  onPress: () => void;
+  activeColor: string;
+  isDark: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.chip,
+        {
+          backgroundColor: isActive
+            ? activeColor
+            : isDark
+              ? '#1F2937'
+              : '#FFFFFF',
+          borderColor: isActive
+            ? activeColor
+            : isDark
+              ? '#374151'
+              : '#DADCE0',
+        },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <MaterialIcons
+        name={icon}
+        size={15}
+        color={isActive ? '#FFFFFF' : isDark ? '#D1D5DB' : '#5F6368'}
+      />
+      <Text
+        style={[
+          styles.chipLabel,
+          {
+            color: isActive ? '#FFFFFF' : isDark ? '#D1D5DB' : '#5F6368',
+          },
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mission info panel (Google-style bottom card)
+// ---------------------------------------------------------------------------
+
 interface MissionInfoPanelProps {
   missions: { status: string }[];
   onViewAll?: () => void;
 }
 
-export function MissionInfoPanel({
-  missions,
-  onViewAll,
-}: MissionInfoPanelProps) {
+export function MissionInfoPanel({ missions, onViewAll }: MissionInfoPanelProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -195,32 +355,69 @@ export function MissionInfoPanel({
     delivered: missions.filter((m) => m.status === 'delivered').length,
   };
 
+  const total = missions.length;
+
   return (
     <View
       style={[
         styles.infoPanel,
-        { backgroundColor: isDark ? '#1F2937' : '#fff' },
+        { backgroundColor: isDark ? '#1F2937' : '#FFFFFF' },
       ]}
     >
-      <View style={styles.infoPanelContent}>
-        <StatusPill color="#3B82F6" count={counts.assigned} label="Assigned" />
-        <StatusPill
-          color="#F59E0B"
-          count={counts.inProgress}
-          label="Active"
-          highlight
-        />
-        <StatusPill color="#10B981" count={counts.delivered} label="Done" />
+      {/* Top row – summary */}
+      <View style={styles.infoPanelTop}>
+        <View style={styles.infoPanelTitleRow}>
+          <MaterialIcons
+            name="local-shipping"
+            size={18}
+            color={isDark ? '#D1D5DB' : '#5F6368'}
+          />
+          <Text
+            style={[
+              styles.infoPanelTitle,
+              { color: isDark ? '#F3F4F6' : '#202124' },
+            ]}
+          >
+            {total} Deliveries Today
+          </Text>
+        </View>
       </View>
 
+      {/* Status pills */}
+      <View style={styles.infoPanelContent}>
+        <StatusPill
+          color="#4285F4"
+          count={counts.assigned}
+          label="Assigned"
+          isDark={isDark}
+        />
+        <StatusPill
+          color="#FBBC04"
+          count={counts.inProgress}
+          label="Active"
+          isDark={isDark}
+          highlight
+        />
+        <StatusPill
+          color="#34A853"
+          count={counts.delivered}
+          label="Done"
+          isDark={isDark}
+        />
+      </View>
+
+      {/* View all */}
       {onViewAll && (
         <TouchableOpacity
-          style={styles.viewAllButton}
+          style={[
+            styles.viewAllBtn,
+            { borderTopColor: isDark ? '#374151' : '#EAEDF0' },
+          ]}
           onPress={onViewAll}
           activeOpacity={0.7}
         >
-          <Text style={styles.viewAllText}>View All</Text>
-          <MaterialIcons name="chevron-right" size={18} color="#3B82F6" />
+          <Text style={styles.viewAllText}>View All Missions</Text>
+          <MaterialIcons name="chevron-right" size={18} color="#4285F4" />
         </TouchableOpacity>
       )}
     </View>
@@ -231,36 +428,47 @@ function StatusPill({
   color,
   count,
   label,
+  isDark,
   highlight = false,
 }: {
   color: string;
   count: number;
   label: string;
+  isDark: boolean;
   highlight?: boolean;
 }) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
   return (
-    <View style={[styles.statusPill, highlight && styles.statusPillHighlight]}>
+    <View
+      style={[
+        styles.statusPill,
+        highlight && {
+          backgroundColor: color + '18',
+          borderRadius: 20,
+        },
+      ]}
+    >
       <View style={[styles.statusDot, { backgroundColor: color }]} />
       <Text
         style={[
           styles.statusCount,
-          isDark && styles.statusCountDark,
-          highlight && styles.statusCountHighlight,
+          { color: highlight ? color : isDark ? '#E5E7EB' : '#202124' },
         ]}
       >
         {count}
       </Text>
-      <Text style={[styles.statusLabel, isDark && styles.statusLabelDark]}>
+      <Text
+        style={[styles.statusLabel, { color: isDark ? '#9CA3AF' : '#5F6368' }]}
+      >
         {label}
       </Text>
     </View>
   );
 }
 
-// Selected mission card that appears at bottom
+// ---------------------------------------------------------------------------
+// Selected mission card (bottom sheet style)
+// ---------------------------------------------------------------------------
+
 interface SelectedMissionCardProps {
   mission: {
     customerName: string;
@@ -285,149 +493,338 @@ export function SelectedMissionCard({
   const isDark = colorScheme === 'dark';
 
   const statusColors: Record<string, string> = {
-    assigned: '#3B82F6',
-    inProgress: '#F59E0B',
-    delivered: '#10B981',
+    assigned: '#4285F4',
+    inProgress: '#FBBC04',
+    delivered: '#34A853',
   };
 
+  const statusLabels: Record<string, string> = {
+    assigned: 'Assigned',
+    inProgress: 'In Progress',
+    delivered: 'Delivered',
+  };
+
+  const statusColor = statusColors[mission.status] || '#5F6368';
+
   return (
-    <Animated.View
+    <View
       style={[
         styles.selectedCard,
-        { backgroundColor: isDark ? '#1F2937' : '#fff' },
+        { backgroundColor: isDark ? '#1F2937' : '#FFFFFF' },
       ]}
     >
+      {/* Handle bar */}
+      <View style={styles.cardHandleContainer}>
+        <View
+          style={[
+            styles.cardHandle,
+            { backgroundColor: isDark ? '#4B5563' : '#DADCE0' },
+          ]}
+        />
+      </View>
+
       {/* Close button */}
       {onClose && (
-        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+        <TouchableOpacity
+          style={[
+            styles.cardCloseBtn,
+            { backgroundColor: isDark ? '#374151' : '#F1F3F4' },
+          ]}
+          onPress={onClose}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <MaterialIcons
             name="close"
-            size={20}
-            color={isDark ? '#9CA3AF' : '#6B7280'}
+            size={16}
+            color={isDark ? '#9CA3AF' : '#5F6368'}
           />
         </TouchableOpacity>
       )}
 
-      {/* Status indicator */}
-      <View
-        style={[
-          styles.statusIndicator,
-          { backgroundColor: statusColors[mission.status] || '#6B7280' },
-        ]}
-      />
+      {/* Content row */}
+      <View style={styles.cardContent}>
+        {/* Status indicator */}
+        <View
+          style={[
+            styles.cardStatusBar,
+            { backgroundColor: statusColor },
+          ]}
+        />
 
-      {/* Content */}
-      <View style={styles.selectedCardContent}>
-        <Text
-          style={[styles.customerName, { color: isDark ? '#fff' : '#1F2937' }]}
-          numberOfLines={1}
-        >
-          {mission.customerName}
-        </Text>
-        <View style={styles.addressRow}>
-          <MaterialIcons
-            name="location-on"
-            size={14}
-            color={isDark ? '#9CA3AF' : '#6B7280'}
-          />
-          <Text style={styles.addressText} numberOfLines={1}>
-            {mission.address}
+        <View style={styles.cardInfo}>
+          {/* Status badge */}
+          <View
+            style={[styles.cardStatusBadge, { backgroundColor: statusColor + '18' }]}
+          >
+            <View style={[styles.cardStatusDot, { backgroundColor: statusColor }]} />
+            <Text style={[styles.cardStatusText, { color: statusColor }]}>
+              {statusLabels[mission.status] || mission.status}
+            </Text>
+          </View>
+
+          <Text
+            style={[
+              styles.cardCustomerName,
+              { color: isDark ? '#F3F4F6' : '#202124' },
+            ]}
+            numberOfLines={1}
+          >
+            {mission.customerName}
           </Text>
+
+          <View style={styles.cardAddressRow}>
+            <MaterialIcons
+              name="location-on"
+              size={14}
+              color={isDark ? '#9CA3AF' : '#80868B'}
+            />
+            <Text
+              style={[
+                styles.cardAddress,
+                { color: isDark ? '#9CA3AF' : '#5F6368' },
+              ]}
+              numberOfLines={1}
+            >
+              {mission.address}
+            </Text>
+          </View>
         </View>
       </View>
 
-      {/* Actions */}
-      <View style={styles.selectedCardActions}>
+      {/* Action buttons row */}
+      <View style={styles.cardActions}>
         {onNavigate && (
           <TouchableOpacity
-            style={[styles.actionButton, styles.navigateButton]}
+            style={[styles.cardActionBtn, { backgroundColor: '#4285F4' }]}
             onPress={onNavigate}
+            activeOpacity={0.8}
           >
-            <MaterialIcons name="navigation" size={20} color="#fff" />
+            <MaterialIcons name="navigation" size={18} color="#FFFFFF" />
+            <Text style={styles.cardActionLabel}>Directions</Text>
           </TouchableOpacity>
         )}
         {onCall && mission.phone && (
           <TouchableOpacity
-            style={[styles.actionButton, styles.callButton]}
+            style={[
+              styles.cardActionBtn,
+              {
+                backgroundColor: isDark ? '#374151' : '#F1F3F4',
+              },
+            ]}
             onPress={onCall}
+            activeOpacity={0.8}
           >
-            <MaterialIcons name="phone" size={20} color="#fff" />
+            <MaterialIcons
+              name="phone"
+              size={18}
+              color={isDark ? '#D1D5DB' : '#5F6368'}
+            />
+            <Text
+              style={[
+                styles.cardActionLabel,
+                { color: isDark ? '#D1D5DB' : '#5F6368' },
+              ]}
+            >
+              Call
+            </Text>
           </TouchableOpacity>
         )}
         {onViewDetails && (
           <TouchableOpacity
-            style={[styles.actionButton, styles.detailsButton]}
+            style={[
+              styles.cardActionBtn,
+              {
+                backgroundColor: isDark ? '#374151' : '#F1F3F4',
+              },
+            ]}
             onPress={onViewDetails}
+            activeOpacity={0.8}
           >
-            <MaterialIcons name="info" size={20} color="#fff" />
+            <MaterialIcons
+              name="info-outline"
+              size={18}
+              color={isDark ? '#D1D5DB' : '#5F6368'}
+            />
+            <Text
+              style={[
+                styles.cardActionLabel,
+                { color: isDark ? '#D1D5DB' : '#5F6368' },
+              ]}
+            >
+              Details
+            </Text>
           </TouchableOpacity>
         )}
       </View>
-    </Animated.View>
+    </View>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
+const SHADOW_LIGHT = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.18,
+  shadowRadius: 3,
+  elevation: 3,
+};
+
+const SHADOW_MEDIUM = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.2,
+  shadowRadius: 6,
+  elevation: 5,
+};
+
 const styles = StyleSheet.create({
-  // Controls container
-  controlsContainer: {
+  // ── Layout containers ─────────────────────────────────────────────
+  topRight: {
     position: 'absolute',
-    top: 16,
-    gap: 10,
+    top: 12,
+    right: 12,
+    gap: 8,
+    alignItems: 'flex-end',
+    zIndex: 5,
   },
-  leftPosition: {
-    left: 16,
+  rightCenter: {
+    position: 'absolute',
+    right: 12,
+    top: '42%',
+    gap: 8,
+    alignItems: 'center',
+    zIndex: 5,
   },
-  rightPosition: {
+  bottomRight: {
+    position: 'absolute',
+    bottom: 100,
     right: 16,
+    zIndex: 5,
   },
-  controlButton: {
-    borderRadius: 24,
+
+  // ── Google-style button ───────────────────────────────────────────
+  gmapBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    ...SHADOW_LIGHT,
   },
-  zoomGroup: {
-    borderRadius: 24,
+  gmapBtnElevated: {
+    ...SHADOW_MEDIUM,
+  },
+
+  // ── Zoom card ─────────────────────────────────────────────────────
+  zoomCard: {
+    borderRadius: 8,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    ...SHADOW_LIGHT,
   },
-  zoomButton: {
-    width: 48,
-    height: 44,
+  zoomBtn: {
+    width: 44,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
   zoomDivider: {
-    height: 1,
+    height: StyleSheet.hairlineWidth,
     marginHorizontal: 8,
   },
 
-  // Info panel
+  // ── Compass ───────────────────────────────────────────────────────
+  compassBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOW_LIGHT,
+  },
+  compassNeedle: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compassNorth: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderBottomWidth: 10,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#EA4335',
+    marginBottom: -1,
+  },
+  compassSouth: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 10,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#B0B5B9',
+    marginTop: -1,
+  },
+  compassCenter: {
+    position: 'absolute',
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#5F6368',
+  },
+
+  // ── Toggle chips ──────────────────────────────────────────────────
+  chipGroup: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    ...SHADOW_LIGHT,
+  },
+  chipLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+
+  // ── Mission Info Panel ────────────────────────────────────────────
   infoPanel: {
     position: 'absolute',
     bottom: 16,
-    left: 16,
-    right: 16,
+    left: 12,
+    right: 12,
     borderRadius: 16,
-    paddingVertical: 12,
+    paddingTop: 14,
+    ...SHADOW_MEDIUM,
+  },
+  infoPanelTop: {
     paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    marginBottom: 10,
+  },
+  infoPanelTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  infoPanelTitle: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   infoPanelContent: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    paddingHorizontal: 8,
+    paddingBottom: 2,
   },
   statusPill: {
     flexDirection: 'row',
@@ -435,10 +832,6 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusPillHighlight: {
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
   },
   statusDot: {
     width: 10,
@@ -448,100 +841,121 @@ const styles = StyleSheet.create({
   statusCount: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#374151',
-  },
-  statusCountDark: {
-    color: '#E5E7EB',
-  },
-  statusCountHighlight: {
-    color: '#F59E0B',
   },
   statusLabel: {
     fontSize: 12,
-    color: '#6B7280',
   },
-  statusLabelDark: {
-    color: '#9CA3AF',
-  },
-  viewAllButton: {
+  viewAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10,
+    marginTop: 6,
     paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    paddingBottom: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   viewAllText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: '#4285F4',
   },
 
-  // Selected mission card
+  // ── Selected Mission Card ─────────────────────────────────────────
   selectedCard: {
     position: 'absolute',
     bottom: 100,
-    left: 16,
-    right: 16,
-    borderRadius: 16,
-    padding: 16,
+    left: 12,
+    right: 12,
+    borderRadius: 20,
+    paddingBottom: 16,
+    ...SHADOW_MEDIUM,
+  },
+  cardHandleContainer: {
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  cardHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+  },
+  cardCloseBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  cardContent: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    gap: 12,
+  },
+  cardStatusBar: {
+    width: 4,
+    borderRadius: 2,
+    minHeight: 54,
+  },
+  cardInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  cardStatusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    alignSelf: 'flex-start',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginBottom: 2,
   },
-  closeButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    padding: 4,
+  cardStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  statusIndicator: {
-    width: 4,
-    height: 50,
-    borderRadius: 2,
-    marginRight: 12,
+  cardStatusText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
-  selectedCardContent: {
-    flex: 1,
-  },
-  customerName: {
+  cardCustomerName: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
   },
-  addressRow: {
+  cardAddressRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  addressText: {
+  cardAddress: {
     fontSize: 13,
-    color: '#6B7280',
     flex: 1,
   },
-  selectedCardActions: {
+  cardActions: {
     flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 14,
     gap: 8,
   },
-  actionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  cardActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 24,
   },
-  navigateButton: {
-    backgroundColor: '#3B82F6',
-  },
-  callButton: {
-    backgroundColor: '#10B981',
-  },
-  detailsButton: {
-    backgroundColor: '#6366F1',
+  cardActionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
