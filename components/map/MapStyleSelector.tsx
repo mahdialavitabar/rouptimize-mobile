@@ -158,13 +158,13 @@ function StyleCard({
           {
             backgroundColor: isDark
               ? isSelected
-                ? '#1E3A5F'
+                ? 'rgba(249, 115, 22, 0.15)'
                 : '#1F2937'
               : isSelected
-                ? '#EFF6FF'
+                ? '#FFF7ED'
                 : '#F9FAFB',
             borderColor: isSelected
-              ? '#3B82F6'
+              ? '#F97316'
               : isDark
                 ? '#374151'
                 : '#E5E7EB',
@@ -181,7 +181,7 @@ function StyleCard({
             styles.styleCardIcon,
             {
               backgroundColor: isSelected
-                ? '#3B82F6'
+                ? '#F97316'
                 : isDark
                   ? '#374151'
                   : '#E5E7EB',
@@ -199,7 +199,7 @@ function StyleCard({
             styles.styleCardLabel,
             {
               color: isSelected
-                ? '#3B82F6'
+                ? '#F97316'
                 : isDark
                   ? '#E5E7EB'
                   : '#374151',
@@ -239,10 +239,10 @@ function ToggleRow({
         {
           backgroundColor: isDark
             ? isEnabled
-              ? 'rgba(59, 130, 246, 0.1)'
+              ? 'rgba(249, 115, 22, 0.1)'
               : '#1F2937'
             : isEnabled
-              ? 'rgba(59, 130, 246, 0.06)'
+              ? 'rgba(249, 115, 22, 0.06)'
               : '#F9FAFB',
           borderColor: isEnabled
             ? color

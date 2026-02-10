@@ -281,7 +281,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         <View
           style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
         >
-          <ActivityIndicator size="large" color="#3B82F6" />
+          <ActivityIndicator size="large" color="#F97316" />
         </View>
       </AuthContext.Provider>
     );

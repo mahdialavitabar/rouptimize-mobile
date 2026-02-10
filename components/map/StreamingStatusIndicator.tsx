@@ -1,6 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View, useColorScheme } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui/text';
 import {
@@ -86,6 +87,7 @@ export function StreamingStatusIndicator() {
     useSensorStreamingStatus();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const dotScaleAnim = useRef(new Animated.Value(1)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -176,6 +178,7 @@ export function StreamingStatusIndicator() {
       style={[
         styles.container,
         {
+          top: Math.max(insets.top, 12) + 4,
           backgroundColor: isDark ? config.bgDark : config.bgLight,
           borderColor: isDark ? config.borderDark : config.borderLight,
         },
@@ -254,7 +257,7 @@ export function StreamingStatusIndicator() {
               <MaterialIcons
                 name="arrow-upward"
                 size={9}
-                color="#4285F4"
+                color="#F97316"
               />
               <Text
                 style={[
@@ -349,7 +352,7 @@ export function StreamingStatusIndicator() {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 12,
+    top: 12, // overridden dynamically with safe area inset
     left: 12,
     flexDirection: 'row',
     alignItems: 'center',

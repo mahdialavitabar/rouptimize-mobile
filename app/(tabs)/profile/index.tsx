@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Text } from '@/components/ui/text';
 import { useUpdateUser, useUser } from '@/lib/api/hooks';
 import { useAuth } from '@/lib/auth';
+import { BRAND, SEMANTIC, pickColor } from '@/lib/colors';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useEffect, useState } from 'react';
 import {
@@ -47,14 +48,14 @@ function ProfileField({
         style={{
           backgroundColor:
             colorScheme === 'dark'
-              ? 'rgba(59, 130, 246, 0.15)'
-              : 'rgba(59, 130, 246, 0.1)',
+              ? `rgba(${BRAND.primaryRgb}, 0.15)`
+              : `rgba(${BRAND.primaryRgb}, 0.1)`,
         }}
       >
         <MaterialIcons
           name={icon}
           size={18}
-          color={colorScheme === 'dark' ? '#60A5FA' : '#3B82F6'}
+          color={pickColor(SEMANTIC.profile, colorScheme === 'dark')}
         />
       </View>
       <View className="flex-1">
@@ -72,6 +73,7 @@ function ProfileField({
 }
 
 export default function Profile() {
+  const colorScheme = useColorScheme();
   const { user: jwtUser, signOut } = useAuth();
   const { data: user, isLoading, error, refetch } = useUser(jwtUser?.sub || '');
   const { mutate: updateUser, isLoading: isUpdating } = useUpdateUser();
@@ -240,7 +242,7 @@ export default function Profile() {
               <Card className="mb-4">
                 <CardContent className="py-6 items-center">
                   <View className="w-20 h-20 rounded-full bg-primary/10 items-center justify-center mb-3">
-                    <MaterialIcons name="person" size={40} color="#3B82F6" />
+                    <MaterialIcons name="person" size={40} color={pickColor(SEMANTIC.profile, colorScheme === 'dark')} />
                   </View>
                   <Text className="text-xl font-bold text-foreground">
                     {user.name || user.username}
@@ -253,7 +255,7 @@ export default function Profile() {
                       <MaterialIcons
                         name="business"
                         size={14}
-                        color="#3B82F6"
+                        color={pickColor(SEMANTIC.company, colorScheme === 'dark')}
                       />
                       <Text className="text-primary text-xs font-medium ml-1">
                         {user.company.name}
@@ -279,7 +281,7 @@ export default function Profile() {
                           <MaterialIcons
                             name="edit"
                             size={18}
-                            color="#3B82F6"
+                            color={pickColor(SEMANTIC.edit, colorScheme === 'dark')}
                           />
                           <Text className="text-primary text-sm font-medium ml-1">
                             Edit

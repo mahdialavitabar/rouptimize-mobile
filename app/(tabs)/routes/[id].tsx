@@ -32,6 +32,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
 import { useRoute } from '@/lib/api/hooks';
 import type { Mission, MissionStatus } from '@/lib/api/types';
+import { BRAND, MAP, STATUS } from '@/lib/colors';
 import {
     openNativeNavigation,
     openNativeNavigationForRoute,
@@ -47,10 +48,10 @@ const MAP_HEIGHT = SCREEN_HEIGHT * 0.45;
 // Status badge configuration for missions
 const statusConfig: Record<MissionStatus, { color: string; bgColor: string }> =
   {
-    unassigned: { color: '#6B7280', bgColor: '#F3F4F6' },
-    assigned: { color: '#3B82F6', bgColor: '#DBEAFE' },
-    inProgress: { color: '#F59E0B', bgColor: '#FEF3C7' },
-    delivered: { color: '#10B981', bgColor: '#D1FAE5' },
+    unassigned: { color: STATUS.unassigned.color, bgColor: STATUS.unassigned.bgColor },
+    assigned: { color: STATUS.assigned.color, bgColor: STATUS.assigned.bgColor },
+    inProgress: { color: STATUS.inProgress.color, bgColor: STATUS.inProgress.bgColor },
+    delivered: { color: STATUS.delivered.color, bgColor: STATUS.delivered.bgColor },
   };
 
 // Get marker color based on mission status
@@ -289,7 +290,7 @@ export default function RouteMapScreen() {
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator
           size="large"
-          color={colorScheme === 'dark' ? '#fff' : '#3B82F6'}
+          color={colorScheme === 'dark' ? '#fff' : BRAND.primary}
         />
         <Text className="mt-4 text-muted-foreground">Loading route...</Text>
       </View>
@@ -372,7 +373,7 @@ export default function RouteMapScreen() {
               <LineLayer
                 id="route-line"
                 style={{
-                  lineColor: '#3B82F6',
+                  lineColor: MAP.routeLine,
                   lineWidth: 5,
                   lineCap: 'round',
                   lineJoin: 'round',
@@ -383,7 +384,7 @@ export default function RouteMapScreen() {
                 id="route-border"
                 belowLayerID="route-line"
                 style={{
-                  lineColor: '#1E40AF',
+                  lineColor: MAP.routeLineBorder,
                   lineWidth: 7,
                   lineCap: 'round',
                   lineJoin: 'round',

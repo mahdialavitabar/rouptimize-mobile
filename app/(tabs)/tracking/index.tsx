@@ -39,6 +39,7 @@ import { StreamingStatusIndicator } from '@/components/map/StreamingStatusIndica
 import { Text } from '@/components/ui/text';
 import { useMissions, useRoutes } from '@/lib/api/hooks';
 import type { Mission } from '@/lib/api/types';
+import { MAP } from '@/lib/colors';
 import { openNativeNavigation } from '@/lib/navigation/openNativeNavigation';
 import { useAuthenticatedSensorStreaming } from '@/lib/sensor-streaming/useAuthenticatedSensorStreaming';
 
@@ -47,7 +48,7 @@ Mapbox.setAccessToken(accessToken);
 
 // Default center (Tehran)
 const DEFAULT_CENTER: [number, number] = [51.389, 35.6892];
-const DEFAULT_ZOOM = 14;
+const DEFAULT_ZOOM = 16;
 
 // ---------------------------------------------------------------------------
 // Speed display component (shows current speed in km/h when navigating)
@@ -168,6 +169,7 @@ export default function TrackingScreen() {
   const [showRoute, setShowRoute] = useState(true);
   const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
   const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM);
+  const [followUser, setFollowUser] = useState(true);
 
   // Camera tracking state
   const [cameraHeading, setCameraHeading] = useState(0);
@@ -289,10 +291,17 @@ export default function TrackingScreen() {
         if (status !== 'granted') return;
 
         setHasPermission(true);
+        // followUser is already true by default — the Camera's
+        // followUserLocation prop will centre on the user as soon as
+        // the location puck is available, no imperative call needed.
         const location = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High,
         });
-        setUserLocation([location.coords.longitude, location.coords.latitude]);
+        const coords: [number, number] = [
+          location.coords.longitude,
+          location.coords.latitude,
+        ];
+        setUserLocation(coords);
         if (location.coords.speed !== null) {
           setUserSpeed(location.coords.speed);
         }
@@ -337,6 +346,8 @@ export default function TrackingScreen() {
 
   // ── Camera controls ────────────────────────────────────────────────
   const centerOnUser = useCallback(async () => {
+    // Re-enable follow mode so the camera locks back on to the user
+    setFollowUser(true);
     try {
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
@@ -346,27 +357,10 @@ export default function TrackingScreen() {
         location.coords.latitude,
       ];
       setUserLocation(coords);
-      cameraRef.current?.setCamera({
-        centerCoordinate: coords,
-        zoomLevel: 17,
-        heading: 0,
-        pitch: 0,
-        animationDuration: 800,
-        animationMode: 'flyTo',
-      });
     } catch {
-      if (userLocation && cameraRef.current) {
-        cameraRef.current.setCamera({
-          centerCoordinate: userLocation,
-          zoomLevel: 17,
-          heading: 0,
-          pitch: 0,
-          animationDuration: 800,
-          animationMode: 'flyTo',
-        });
-      }
+      // follow mode will still centre using the location puck
     }
-  }, [userLocation]);
+  }, []);
 
   const zoomIn = useCallback(() => {
     const newZoom = Math.min(zoomLevel + 1, 20);
@@ -388,6 +382,7 @@ export default function TrackingScreen() {
 
   const fitAllMarkers = useCallback(() => {
     if (allBounds && cameraRef.current) {
+      setFollowUser(false);
       cameraRef.current.fitBounds(
         allBounds.ne,
         allBounds.sw,
@@ -413,6 +408,7 @@ export default function TrackingScreen() {
         zoom: number;
         heading: number;
         pitch: number;
+        isFollowingUserLocation?: boolean;
       };
     }) => {
       const { heading, pitch, zoom } = state.properties;
@@ -433,6 +429,7 @@ export default function TrackingScreen() {
   // ── Mission interactions ───────────────────────────────────────────
   const selectMission = useCallback((mission: Mission) => {
     setSelectedMission(mission);
+    setFollowUser(false);
     cameraRef.current?.setCamera({
       centerCoordinate: [mission.longitude, mission.latitude],
       zoomLevel: 17,
@@ -474,7 +471,7 @@ export default function TrackingScreen() {
     router.push('/(tabs)/missions' as any);
   }, [router]);
 
-  const centerCoordinate = userLocation ?? DEFAULT_CENTER;
+  const centerCoordinate = followUser ? undefined : (userLocation ?? DEFAULT_CENTER);
 
   // Determine if the current style supports 3D buildings well
   const isSatelliteStyle =
@@ -505,8 +502,23 @@ export default function TrackingScreen() {
       >
         <Camera
           ref={cameraRef}
-          zoomLevel={zoomLevel}
-          centerCoordinate={centerCoordinate}
+          followUserLocation={followUser && hasPermission}
+          followZoomLevel={DEFAULT_ZOOM}
+          followPitch={0}
+          onUserTrackingModeChange={(event: any) => {
+            // When the user pans/zooms the map, Mapbox fires this with
+            // followUserLocation = false — we mirror that into state so
+            // declarative props stop fighting with the gesture.
+            if (event?.nativeEvent?.payload?.followUserLocation === false) {
+              setFollowUser(false);
+            }
+          }}
+          {...(!followUser || !hasPermission
+            ? {
+                centerCoordinate: centerCoordinate ?? DEFAULT_CENTER,
+                zoomLevel,
+              }
+            : {})}
           animationMode="flyTo"
           animationDuration={1000}
         />
@@ -540,7 +552,7 @@ export default function TrackingScreen() {
             visible
             pulsing={{
               isEnabled: true,
-              color: '#4285F4',
+              color: MAP.locationPuck,
               radius: 70,
             }}
           />
@@ -719,7 +731,7 @@ export default function TrackingScreen() {
             <LineLayer
               id="route-casing"
               style={{
-                lineColor: isDark ? '#1A3B6D' : '#1A73E8',
+                lineColor: isDark ? MAP.routeHaloDark : MAP.routeLineBorder,
                 lineWidth: 10,
                 lineCap: 'round',
                 lineJoin: 'round',
@@ -742,7 +754,7 @@ export default function TrackingScreen() {
             <LineLayer
               id="route-line"
               style={{
-                lineColor: '#4285F4',
+                lineColor: isDark ? MAP.routeLineDark : MAP.routeLine,
                 lineWidth: 6,
                 lineCap: 'round',
                 lineJoin: 'round',
@@ -753,7 +765,7 @@ export default function TrackingScreen() {
               id="route-border"
               belowLayerID="route-line"
               style={{
-                lineColor: '#1A73E8',
+                lineColor: MAP.routeLineBorder,
                 lineWidth: 8,
                 lineCap: 'round',
                 lineJoin: 'round',

@@ -15,6 +15,7 @@ import { FilterChip } from '@/components/ui/filter-chip';
 import { Text } from '@/components/ui/text';
 import { useRoutes } from '@/lib/api/hooks';
 import type { Route, RouteStatus } from '@/lib/api/types';
+import { BRAND, ROUTE_STATUS, SEMANTIC, pickColor } from '@/lib/colors';
 import { formatDistance, formatDuration } from '@/lib/utils';
 
 // Status badge configuration
@@ -24,32 +25,32 @@ const statusConfig: Record<
 > = {
   draft: {
     label: 'Draft',
-    color: '#6B7280',
-    bgColor: '#F3F4F6',
+    color: ROUTE_STATUS.draft.color,
+    bgColor: ROUTE_STATUS.draft.bgColor,
     icon: 'edit',
   },
   planned: {
     label: 'Planned',
-    color: '#3B82F6',
-    bgColor: '#DBEAFE',
+    color: ROUTE_STATUS.planned.color,
+    bgColor: ROUTE_STATUS.planned.bgColor,
     icon: 'event',
   },
   in_progress: {
     label: 'In Progress',
-    color: '#F59E0B',
-    bgColor: '#FEF3C7',
+    color: ROUTE_STATUS.in_progress.color,
+    bgColor: ROUTE_STATUS.in_progress.bgColor,
     icon: 'local-shipping',
   },
   completed: {
     label: 'Completed',
-    color: '#10B981',
-    bgColor: '#D1FAE5',
+    color: ROUTE_STATUS.completed.color,
+    bgColor: ROUTE_STATUS.completed.bgColor,
     icon: 'check-circle',
   },
   delayed: {
     label: 'Delayed',
-    color: '#EF4444',
-    bgColor: '#FEE2E2',
+    color: ROUTE_STATUS.delayed.color,
+    bgColor: ROUTE_STATUS.delayed.bgColor,
     icon: 'warning',
   },
 };
@@ -82,6 +83,7 @@ function StatusBadge({ status }: { status: RouteStatus }) {
 
 function RouteCard({ route, onPress }: { route: Route; onPress: () => void }) {
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   // Count missions - prefer routeMissions, fallback to missions
   const missionCount =
     route.routeMissions?.length ?? route.missions?.length ?? 0;
@@ -113,7 +115,7 @@ function RouteCard({ route, onPress }: { route: Route; onPress: () => void }) {
                 <MaterialIcons
                   name="assignment"
                   size={16}
-                  color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                  color={pickColor(SEMANTIC.mission, isDark)}
                 />
                 <Text className="text-muted-foreground text-sm">
                   {missionCount} {missionCount === 1 ? 'stop' : 'stops'}
@@ -125,7 +127,7 @@ function RouteCard({ route, onPress }: { route: Route; onPress: () => void }) {
                 <MaterialIcons
                   name="straighten"
                   size={16}
-                  color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                  color={pickColor(SEMANTIC.route, isDark)}
                 />
                 <Text className="text-muted-foreground text-sm">
                   {formatDistance(route.totalDistanceMeters)}
@@ -137,7 +139,7 @@ function RouteCard({ route, onPress }: { route: Route; onPress: () => void }) {
                 <MaterialIcons
                   name="schedule"
                   size={16}
-                  color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                  color={pickColor(SEMANTIC.calendar, isDark)}
                 />
                 <Text className="text-muted-foreground text-sm">
                   {formatDuration(route.totalDurationSeconds)}
@@ -151,7 +153,7 @@ function RouteCard({ route, onPress }: { route: Route; onPress: () => void }) {
                 <MaterialIcons
                   name="local-shipping"
                   size={16}
-                  color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                  color={pickColor(SEMANTIC.delivery, isDark)}
                 />
                 <Text className="text-muted-foreground text-sm">
                   {route.vehicle.plateNumber}
@@ -165,7 +167,7 @@ function RouteCard({ route, onPress }: { route: Route; onPress: () => void }) {
               <MaterialIcons
                 name="calendar-today"
                 size={16}
-                color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                color={pickColor(SEMANTIC.calendar, isDark)}
               />
               <Text className="text-muted-foreground text-sm">
                 {new Date(route.date).toLocaleDateString()}
@@ -181,6 +183,7 @@ function RouteCard({ route, onPress }: { route: Route; onPress: () => void }) {
 export default function RoutesScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const [filter, setFilter] = useState<FilterOption>('all');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -220,7 +223,7 @@ export default function RoutesScreen() {
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator
           size="large"
-          color={colorScheme === 'dark' ? '#fff' : '#3B82F6'}
+          color={isDark ? '#fff' : BRAND.primary}
         />
         <Text className="mt-4 text-muted-foreground">Loading routes...</Text>
       </View>
@@ -233,7 +236,7 @@ export default function RoutesScreen() {
         <MaterialIcons
           name="error-outline"
           size={48}
-          color={colorScheme === 'dark' ? '#EF4444' : '#DC2626'}
+          color={isDark ? '#EF4444' : '#DC2626'}
         />
         <Text className="mt-4 text-center text-lg font-medium text-destructive">
           Failed to load routes
@@ -289,7 +292,7 @@ export default function RoutesScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={colorScheme === 'dark' ? '#fff' : '#3B82F6'}
+            tintColor={isDark ? '#fff' : BRAND.primary}
           />
         }
         ListEmptyComponent={
@@ -297,7 +300,7 @@ export default function RoutesScreen() {
             <MaterialIcons
               name="route"
               size={64}
-              color={colorScheme === 'dark' ? '#4B5563' : '#9CA3AF'}
+              color={isDark ? '#4B5563' : '#9CA3AF'}
             />
             <Text className="mt-4 text-lg font-medium text-muted-foreground">
               No routes found

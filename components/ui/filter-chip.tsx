@@ -1,4 +1,5 @@
 import { Text } from '@/components/ui/text';
+import { BRAND } from '@/lib/colors';
 import { TouchableOpacity, useColorScheme } from 'react-native';
 
 interface FilterChipProps {
@@ -18,8 +19,8 @@ export function FilterChip({ label, isActive, onPress }: FilterChipProps) {
       style={{
         backgroundColor: isActive
           ? colorScheme === 'dark'
-            ? '#3B82F6'
-            : '#2563EB'
+            ? BRAND.primaryLight
+            : BRAND.primaryDark
           : colorScheme === 'dark'
             ? '#374151'
             : '#F3F4F6',

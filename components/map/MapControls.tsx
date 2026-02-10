@@ -7,8 +7,10 @@ import {
     View,
     useColorScheme,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui/text';
+import { BRAND, MAP, STATUS } from '@/lib/colors';
 
 // ---------------------------------------------------------------------------
 // Google-Maps-style Map Controls
@@ -47,10 +49,11 @@ export function MapControls({
 }: MapControlsProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
 
   const cardBg = isDark ? '#1F2937' : '#FFFFFF';
   const iconColor = isDark ? '#E5E7EB' : '#5F6368';
-  const activeAccent = '#4285F4'; // Google blue
+  const activeAccent = MAP.controlAccent;
   const dividerColor = isDark ? '#374151' : '#EAEDF0';
 
   // Compass is visible when heading OR pitch are non-zero
@@ -58,29 +61,8 @@ export function MapControls({
 
   return (
     <>
-      {/* ── Top-right cluster: Layers, Compass, Toggle chips ──────────── */}
-      <View style={styles.topRight}>
-        {/* Layers button (square Google-style) */}
-        {onOpenLayers && (
-          <GMapButton
-            icon="layers"
-            onPress={onOpenLayers}
-            bgColor={cardBg}
-            iconColor={iconColor}
-            size={44}
-            borderRadius={8}
-          />
-        )}
-
-        {/* Compass – auto-appears when map is rotated/tilted */}
-        {showCompass && onResetBearing && (
-          <CompassButton
-            heading={heading}
-            onPress={onResetBearing}
-            bgColor={cardBg}
-          />
-        )}
-
+      {/* ── Top bar: chips + compass + layers in one horizontal row ──── */}
+      <View style={[styles.topBar, { top: Math.max(insets.top, 12) + 4 }]}>
         {/* Toggle chips: Missions / Route */}
         <View style={styles.chipGroup}>
           {onToggleMissions && (
@@ -104,6 +86,30 @@ export function MapControls({
             />
           )}
         </View>
+
+        {/* Spacer pushes the right-side buttons to the edge */}
+        <View style={{ flex: 1 }} />
+
+        {/* Compass – auto-appears when map is rotated/tilted */}
+        {showCompass && onResetBearing && (
+          <CompassButton
+            heading={heading}
+            onPress={onResetBearing}
+            bgColor={cardBg}
+          />
+        )}
+
+        {/* Layers button (square Google-style) */}
+        {onOpenLayers && (
+          <GMapButton
+            icon="layers"
+            onPress={onOpenLayers}
+            bgColor={cardBg}
+            iconColor={iconColor}
+            size={44}
+            borderRadius={8}
+          />
+        )}
       </View>
 
       {/* ── Right-side vertical cluster: Zoom + Fit ──────────────────── */}
@@ -337,7 +343,7 @@ function ToggleChip({
 }
 
 // ---------------------------------------------------------------------------
-// Mission info panel (Google-style bottom card)
+// Mission Info Panel (Google-style bottom card)
 // ---------------------------------------------------------------------------
 
 interface MissionInfoPanelProps {
@@ -386,7 +392,7 @@ export function MissionInfoPanel({ missions, onViewAll }: MissionInfoPanelProps)
       {/* Status pills */}
       <View style={styles.infoPanelContent}>
         <StatusPill
-          color="#4285F4"
+          color={STATUS.assigned.color}
           count={counts.assigned}
           label="Assigned"
           isDark={isDark}
@@ -417,7 +423,7 @@ export function MissionInfoPanel({ missions, onViewAll }: MissionInfoPanelProps)
           activeOpacity={0.7}
         >
           <Text style={styles.viewAllText}>View All Missions</Text>
-          <MaterialIcons name="chevron-right" size={18} color="#4285F4" />
+          <MaterialIcons name="chevron-right" size={18} color={BRAND.primary} />
         </TouchableOpacity>
       )}
     </View>
@@ -493,9 +499,9 @@ export function SelectedMissionCard({
   const isDark = colorScheme === 'dark';
 
   const statusColors: Record<string, string> = {
-    assigned: '#4285F4',
-    inProgress: '#FBBC04',
-    delivered: '#34A853',
+    assigned: STATUS.assigned.color,
+    inProgress: STATUS.inProgress.color,
+    delivered: STATUS.delivered.color,
   };
 
   const statusLabels: Record<string, string> = {
@@ -595,7 +601,7 @@ export function SelectedMissionCard({
       <View style={styles.cardActions}>
         {onNavigate && (
           <TouchableOpacity
-            style={[styles.cardActionBtn, { backgroundColor: '#4285F4' }]}
+            style={[styles.cardActionBtn, { backgroundColor: BRAND.primary }]}
             onPress={onNavigate}
             activeOpacity={0.8}
           >
@@ -682,12 +688,14 @@ const SHADOW_MEDIUM = {
 
 const styles = StyleSheet.create({
   // ── Layout containers ─────────────────────────────────────────────
-  topRight: {
+  topBar: {
     position: 'absolute',
-    top: 12,
+    top: 12, // overridden dynamically with safe area inset
+    left: 12,
     right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
-    alignItems: 'flex-end',
     zIndex: 5,
   },
   rightCenter: {
@@ -857,7 +865,7 @@ const styles = StyleSheet.create({
   viewAllText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#4285F4',
+    color: BRAND.primary,
   },
 
   // ── Selected Mission Card ─────────────────────────────────────────

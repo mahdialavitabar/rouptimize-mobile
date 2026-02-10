@@ -7,8 +7,10 @@ import {
     View,
     useColorScheme,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui/text';
+import { BRAND, SENSOR } from '@/lib/colors';
 import {
     type SensorThroughput,
     useSensorStreamingStatus,
@@ -120,7 +122,7 @@ function SensorBreakdown({
             styles.breakdownBarSegment,
             {
               flex: accelPct || 1,
-              backgroundColor: '#3B82F6',
+              backgroundColor: SENSOR.accelerometer,
               borderTopLeftRadius: 4,
               borderBottomLeftRadius: 4,
             },
@@ -129,7 +131,7 @@ function SensorBreakdown({
         <View
           style={[
             styles.breakdownBarSegment,
-            { flex: gyroPct || 1, backgroundColor: '#8B5CF6' },
+            { flex: gyroPct || 1, backgroundColor: SENSOR.gyroscope },
           ]}
         />
         <View
@@ -137,7 +139,7 @@ function SensorBreakdown({
             styles.breakdownBarSegment,
             {
               flex: locPct || 1,
-              backgroundColor: '#10B981',
+              backgroundColor: SENSOR.location,
               borderTopRightRadius: 4,
               borderBottomRightRadius: 4,
             },
@@ -146,7 +148,7 @@ function SensorBreakdown({
       </View>
       <View style={styles.breakdownLegend}>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
+          <View style={[styles.legendDot, { backgroundColor: SENSOR.accelerometer }]} />
           <Text
             style={[
               styles.legendText,
@@ -157,7 +159,7 @@ function SensorBreakdown({
           </Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#8B5CF6' }]} />
+          <View style={[styles.legendDot, { backgroundColor: SENSOR.gyroscope }]} />
           <Text
             style={[
               styles.legendText,
@@ -168,7 +170,7 @@ function SensorBreakdown({
           </Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
+          <View style={[styles.legendDot, { backgroundColor: SENSOR.location }]} />
           <Text
             style={[
               styles.legendText,
@@ -281,6 +283,7 @@ export function SensorDataOverlay() {
   const { status, throughput } = useSensorStreamingStatus();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
   const [isExpanded, setIsExpanded] = useState(false);
   const expandAnim = useRef(new Animated.Value(0)).current;
 
@@ -336,6 +339,7 @@ export function SensorDataOverlay() {
       style={[
         styles.container,
         {
+          top: Math.max(insets.top, 12) + 50,
           backgroundColor: bgColor,
           borderColor,
         },
@@ -374,11 +378,11 @@ export function SensorDataOverlay() {
           <View
             style={[
               styles.ratePill,
-              { backgroundColor: 'rgba(59, 130, 246, 0.15)' },
+              { backgroundColor: `rgba(${BRAND.primaryRgb}, 0.15)` },
             ]}
           >
-            <MaterialIcons name="cloud-upload" size={11} color="#3B82F6" />
-            <Text style={[styles.rateText, { color: '#3B82F6' }]}>
+            <MaterialIcons name="cloud-upload" size={11} color={BRAND.primary} />
+            <Text style={[styles.rateText, { color: BRAND.primary }]}>
               {formatRate(throughput.batchesSentPerSecond)}/s
             </Text>
           </View>
@@ -443,7 +447,7 @@ export function SensorDataOverlay() {
             label="Data uploaded"
             value={formatBytes(throughput.estimatedBytesSent)}
             unit=""
-            color="#3B82F6"
+            color={BRAND.primary}
             isDark={isDark}
           />
 
@@ -497,7 +501,7 @@ export function SensorDataOverlay() {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 58,
+    top: 58, // overridden dynamically with safe area inset
     left: 12,
     borderRadius: 12,
     borderWidth: 1,

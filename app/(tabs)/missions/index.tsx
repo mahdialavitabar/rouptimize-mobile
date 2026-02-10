@@ -15,6 +15,7 @@ import { FilterChip } from '@/components/ui/filter-chip';
 import { Text } from '@/components/ui/text';
 import { useMissions } from '@/lib/api/hooks';
 import type { Mission, MissionStatus } from '@/lib/api/types';
+import { BRAND, SEMANTIC, STATUS, pickColor } from '@/lib/colors';
 import { formatTimeWindow } from '@/lib/utils';
 
 // Status badge configuration
@@ -24,26 +25,26 @@ const statusConfig: Record<
 > = {
   unassigned: {
     label: 'Unassigned',
-    color: '#6B7280',
-    bgColor: '#F3F4F6',
+    color: STATUS.unassigned.color,
+    bgColor: STATUS.unassigned.bgColor,
     icon: 'help-outline',
   },
   assigned: {
     label: 'Assigned',
-    color: '#3B82F6',
-    bgColor: '#DBEAFE',
+    color: STATUS.assigned.color,
+    bgColor: STATUS.assigned.bgColor,
     icon: 'assignment',
   },
   inProgress: {
     label: 'In Progress',
-    color: '#F59E0B',
-    bgColor: '#FEF3C7',
+    color: STATUS.inProgress.color,
+    bgColor: STATUS.inProgress.bgColor,
     icon: 'local-shipping',
   },
   delivered: {
     label: 'Delivered',
-    color: '#10B981',
-    bgColor: '#D1FAE5',
+    color: STATUS.delivered.color,
+    bgColor: STATUS.delivered.bgColor,
     icon: 'check-circle',
   },
 };
@@ -82,6 +83,7 @@ function MissionCard({
   onPress: () => void;
 }) {
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
@@ -101,7 +103,7 @@ function MissionCard({
               <MaterialIcons
                 name="location-on"
                 size={16}
-                color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                color={pickColor(SEMANTIC.location, isDark)}
               />
               <Text
                 className="text-muted-foreground flex-1 text-sm"
@@ -116,7 +118,7 @@ function MissionCard({
               <MaterialIcons
                 name="phone"
                 size={16}
-                color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                color={pickColor(SEMANTIC.phone, isDark)}
               />
               <Text className="text-muted-foreground text-sm">
                 {mission.phone}
@@ -128,7 +130,7 @@ function MissionCard({
               <MaterialIcons
                 name="schedule"
                 size={16}
-                color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                color={pickColor(SEMANTIC.calendar, isDark)}
               />
               <Text className="text-muted-foreground text-sm">
                 {formatTimeWindow(mission.startTimeWindow)} -{' '}
@@ -140,10 +142,10 @@ function MissionCard({
             {mission.vehiclePlate && (
               <View className="flex-row items-center gap-2">
                 <MaterialIcons
-                  name="local-shipping"
-                  size={16}
-                  color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                />
+                    name="local-shipping"
+                    size={16}
+                    color={pickColor(SEMANTIC.delivery, isDark)}
+                  />
                 <Text className="text-muted-foreground text-sm">
                   {mission.vehiclePlate}
                 </Text>
@@ -159,6 +161,7 @@ function MissionCard({
 export default function MissionsScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const [filter, setFilter] = useState<FilterOption>('all');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -198,7 +201,7 @@ export default function MissionsScreen() {
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator
           size="large"
-          color={colorScheme === 'dark' ? '#fff' : '#3B82F6'}
+          color={isDark ? '#fff' : BRAND.primary}
         />
         <Text className="mt-4 text-muted-foreground">Loading missions...</Text>
       </View>
@@ -211,7 +214,7 @@ export default function MissionsScreen() {
         <MaterialIcons
           name="error-outline"
           size={48}
-          color={colorScheme === 'dark' ? '#EF4444' : '#DC2626'}
+          color={isDark ? '#EF4444' : '#DC2626'}
         />
         <Text className="mt-4 text-center text-lg font-medium text-destructive">
           Failed to load missions
@@ -273,7 +276,7 @@ export default function MissionsScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={colorScheme === 'dark' ? '#fff' : '#3B82F6'}
+            tintColor={isDark ? '#fff' : BRAND.primary}
           />
         }
         ListEmptyComponent={
@@ -281,7 +284,7 @@ export default function MissionsScreen() {
             <MaterialIcons
               name="inbox"
               size={64}
-              color={colorScheme === 'dark' ? '#4B5563' : '#9CA3AF'}
+              color={isDark ? '#4B5563' : '#9CA3AF'}
             />
             <Text className="mt-4 text-lg font-medium text-muted-foreground">
               No missions found

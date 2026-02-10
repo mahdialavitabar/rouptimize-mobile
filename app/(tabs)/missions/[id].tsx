@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
 import { useMission, useUpdateMissionStatus } from '@/lib/api/hooks';
 import { MissionStatus } from '@/lib/api/types';
+import { BRAND, SEMANTIC, STATUS, pickColor } from '@/lib/colors';
 import { openNativeNavigation } from '@/lib/navigation/openNativeNavigation';
 import { formatTimeWindow } from '@/lib/utils';
 
@@ -28,26 +29,26 @@ const statusConfig: Record<
 > = {
   unassigned: {
     label: 'Unassigned',
-    color: '#6B7280',
-    bgColor: '#F3F4F6',
+    color: STATUS.unassigned.color,
+    bgColor: STATUS.unassigned.bgColor,
     icon: 'help-outline',
   },
   assigned: {
     label: 'Assigned',
-    color: '#3B82F6',
-    bgColor: '#DBEAFE',
+    color: STATUS.assigned.color,
+    bgColor: STATUS.assigned.bgColor,
     icon: 'assignment',
   },
   inProgress: {
     label: 'In Progress',
-    color: '#F59E0B',
-    bgColor: '#FEF3C7',
+    color: STATUS.inProgress.color,
+    bgColor: STATUS.inProgress.bgColor,
     icon: 'local-shipping',
   },
   delivered: {
     label: 'Delivered',
-    color: '#10B981',
-    bgColor: '#D1FAE5',
+    color: STATUS.delivered.color,
+    bgColor: STATUS.delivered.bgColor,
     icon: 'check-circle',
   },
 };
@@ -243,7 +244,7 @@ export default function MissionDetailScreen() {
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator
           size="large"
-          color={colorScheme === 'dark' ? '#fff' : '#3B82F6'}
+          color={colorScheme === 'dark' ? '#fff' : BRAND.primary}
         />
         <Text className="mt-4 text-muted-foreground">Loading mission...</Text>
       </View>
@@ -408,7 +409,7 @@ export default function MissionDetailScreen() {
                   <MaterialIcons
                     name="route"
                     size={24}
-                    color={colorScheme === 'dark' ? '#3B82F6' : '#2563EB'}
+                    color={pickColor(SEMANTIC.route, colorScheme === 'dark')}
                   />
                   <Text className="ml-3 text-primary font-medium">
                     View Route on Map

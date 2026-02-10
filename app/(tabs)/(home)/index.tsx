@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
 import { useMissions, useRoutes } from '@/lib/api/hooks';
 import { useAuth } from '@/lib/auth';
+import { BRAND, SEMANTIC, STATUS, pickColor } from '@/lib/colors';
 import { useSensorPermission } from '@/lib/sensor-streaming/SensorPermissionContext';
 import { formatTimeWindow } from '@/lib/utils';
 
@@ -31,6 +32,7 @@ function getGreeting(): string {
 export default function HomeScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const { user } = useAuth();
   const { hasBeenAsked, requestPermission, permissionStatus } =
     useSensorPermission();
@@ -150,8 +152,11 @@ export default function HomeScreen() {
         >
           <Card>
             <CardContent className="py-4 items-center">
-              <View className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900 items-center justify-center mb-2">
-                <MaterialIcons name="assignment" size={24} color="#3B82F6" />
+              <View
+                className="w-12 h-12 rounded-full items-center justify-center mb-2"
+                style={{ backgroundColor: isDark ? 'rgba(249, 115, 22, 0.15)' : '#FFEDD5' }}
+              >
+                <MaterialIcons name="assignment" size={24} color={BRAND.primary} />
               </View>
               <Text className="text-2xl font-bold text-foreground">
                 {stats.totalMissions}
@@ -171,8 +176,11 @@ export default function HomeScreen() {
         >
           <Card>
             <CardContent className="py-4 items-center">
-              <View className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900 items-center justify-center mb-2">
-                <MaterialIcons name="check-circle" size={24} color="#10B981" />
+              <View
+                className="w-12 h-12 rounded-full items-center justify-center mb-2"
+                style={{ backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5' }}
+              >
+                <MaterialIcons name="check-circle" size={24} color={STATUS.delivered.color} />
               </View>
               <Text className="text-2xl font-bold text-foreground">
                 {stats.deliveredMissions}
@@ -190,11 +198,14 @@ export default function HomeScreen() {
         >
           <Card>
             <CardContent className="py-4 items-center">
-              <View className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900 items-center justify-center mb-2">
+              <View
+                className="w-12 h-12 rounded-full items-center justify-center mb-2"
+                style={{ backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7' }}
+              >
                 <MaterialIcons
                   name="local-shipping"
                   size={24}
-                  color="#F59E0B"
+                  color={STATUS.inProgress.color}
                 />
               </View>
               <Text className="text-2xl font-bold text-foreground">
@@ -213,8 +224,11 @@ export default function HomeScreen() {
         >
           <Card>
             <CardContent className="py-4 items-center">
-              <View className="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900 items-center justify-center mb-2">
-                <MaterialIcons name="route" size={24} color="#8B5CF6" />
+              <View
+                className="w-12 h-12 rounded-full items-center justify-center mb-2"
+                style={{ backgroundColor: isDark ? 'rgba(13, 148, 136, 0.15)' : '#CCFBF1' }}
+              >
+                <MaterialIcons name="route" size={24} color={pickColor(SEMANTIC.route, isDark)} />
               </View>
               <Text className="text-2xl font-bold text-foreground">
                 {stats.totalRoutes}
@@ -240,7 +254,9 @@ export default function HomeScreen() {
                 }
                 size={20}
                 color={
-                  nextMission.status === 'inProgress' ? '#F59E0B' : '#3B82F6'
+                  nextMission.status === 'inProgress'
+                    ? STATUS.inProgress.color
+                    : BRAND.primary
                 }
               />
               <Text className="ml-2 text-lg font-semibold text-foreground">
@@ -258,7 +274,7 @@ export default function HomeScreen() {
               <MaterialIcons
                 name="location-on"
                 size={16}
-                color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                color={pickColor(SEMANTIC.location, isDark)}
               />
               <Text className="text-muted-foreground flex-1" numberOfLines={1}>
                 {nextMission.address}
@@ -268,7 +284,7 @@ export default function HomeScreen() {
               <MaterialIcons
                 name="schedule"
                 size={16}
-                color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                color={pickColor(SEMANTIC.calendar, isDark)}
               />
               <Text className="text-muted-foreground">
                 {formatTimeWindow(nextMission.startTimeWindow)} -{' '}
@@ -296,7 +312,7 @@ export default function HomeScreen() {
             <MaterialIcons
               name="event-available"
               size={48}
-              color={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'}
+              color={isDark ? '#6B7280' : '#9CA3AF'}
             />
             <Text className="mt-4 text-lg font-medium text-foreground">
               No deliveries today
@@ -322,16 +338,15 @@ export default function HomeScreen() {
             <View
               className="w-9 h-9 rounded-full items-center justify-center mr-3"
               style={{
-                backgroundColor:
-                  colorScheme === 'dark'
-                    ? 'rgba(59, 130, 246, 0.15)'
-                    : 'rgba(37, 99, 235, 0.1)',
+                backgroundColor: isDark
+                  ? 'rgba(13, 148, 136, 0.15)'
+                  : 'rgba(13, 148, 136, 0.1)',
               }}
             >
               <MaterialIcons
                 name="map"
                 size={20}
-                color={colorScheme === 'dark' ? '#60A5FA' : '#2563EB'}
+                color={pickColor(SEMANTIC.route, isDark)}
               />
             </View>
             <Text className="flex-1 text-foreground font-medium">
@@ -340,7 +355,7 @@ export default function HomeScreen() {
             <MaterialIcons
               name="chevron-right"
               size={24}
-              color={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'}
+              color={isDark ? '#6B7280' : '#9CA3AF'}
             />
           </TouchableOpacity>
           <TouchableOpacity
@@ -351,16 +366,15 @@ export default function HomeScreen() {
             <View
               className="w-9 h-9 rounded-full items-center justify-center mr-3"
               style={{
-                backgroundColor:
-                  colorScheme === 'dark'
-                    ? 'rgba(59, 130, 246, 0.15)'
-                    : 'rgba(37, 99, 235, 0.1)',
+                backgroundColor: isDark
+                  ? `rgba(${BRAND.primaryRgb}, 0.15)`
+                  : `rgba(${BRAND.primaryRgb}, 0.1)`,
               }}
             >
               <MaterialIcons
                 name="assignment"
                 size={20}
-                color={colorScheme === 'dark' ? '#60A5FA' : '#2563EB'}
+                color={pickColor(SEMANTIC.mission, isDark)}
               />
             </View>
             <Text className="flex-1 text-foreground font-medium">
@@ -369,7 +383,7 @@ export default function HomeScreen() {
             <MaterialIcons
               name="chevron-right"
               size={24}
-              color={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'}
+              color={isDark ? '#6B7280' : '#9CA3AF'}
             />
           </TouchableOpacity>
           <TouchableOpacity
@@ -380,16 +394,15 @@ export default function HomeScreen() {
             <View
               className="w-9 h-9 rounded-full items-center justify-center mr-3"
               style={{
-                backgroundColor:
-                  colorScheme === 'dark'
-                    ? 'rgba(16, 185, 129, 0.15)'
-                    : 'rgba(16, 185, 129, 0.1)',
+                backgroundColor: isDark
+                  ? 'rgba(5, 150, 105, 0.15)'
+                  : 'rgba(5, 150, 105, 0.1)',
               }}
             >
               <MaterialIcons
                 name="gps-fixed"
                 size={20}
-                color={colorScheme === 'dark' ? '#34D399' : '#059669'}
+                color={pickColor(SEMANTIC.navigation, isDark)}
               />
             </View>
             <Text className="flex-1 text-foreground font-medium">
@@ -398,7 +411,7 @@ export default function HomeScreen() {
             <MaterialIcons
               name="chevron-right"
               size={24}
-              color={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'}
+              color={isDark ? '#6B7280' : '#9CA3AF'}
             />
           </TouchableOpacity>
         </CardContent>

@@ -5,6 +5,7 @@ import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui/text';
 import type { Mission, MissionStatus } from '@/lib/api/types';
+import { STATUS } from '@/lib/colors';
 
 // Status configuration with colors and icons
 export const missionStatusConfig: Record<
@@ -17,28 +18,28 @@ export const missionStatusConfig: Record<
   }
 > = {
   unassigned: {
-    color: '#6B7280',
-    bgColor: '#F3F4F6',
+    color: STATUS.unassigned.color,
+    bgColor: STATUS.unassigned.bgColor,
     icon: 'help-outline',
-    pulseColor: 'rgba(107, 114, 128, 0.3)',
+    pulseColor: STATUS.unassigned.pulseColor,
   },
   assigned: {
-    color: '#3B82F6',
-    bgColor: '#DBEAFE',
+    color: STATUS.assigned.color,
+    bgColor: STATUS.assigned.bgColor,
     icon: 'assignment',
-    pulseColor: 'rgba(59, 130, 246, 0.3)',
+    pulseColor: STATUS.assigned.pulseColor,
   },
   inProgress: {
-    color: '#F59E0B',
-    bgColor: '#FEF3C7',
+    color: STATUS.inProgress.color,
+    bgColor: STATUS.inProgress.bgColor,
     icon: 'local-shipping',
-    pulseColor: 'rgba(245, 158, 11, 0.4)',
+    pulseColor: STATUS.inProgress.pulseColor,
   },
   delivered: {
-    color: '#10B981',
-    bgColor: '#D1FAE5',
+    color: STATUS.delivered.color,
+    bgColor: STATUS.delivered.bgColor,
     icon: 'check-circle',
-    pulseColor: 'rgba(16, 185, 129, 0.3)',
+    pulseColor: STATUS.delivered.pulseColor,
   },
 };
 

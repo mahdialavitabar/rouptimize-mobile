@@ -1,23 +1,30 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Tabs } from 'expo-router';
-import { Platform, useColorScheme } from 'react-native';
+import { useColorScheme } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { TAB_BAR } from '@/lib/colors';
 
 export default function TabsLayout() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
+
+  // Use the actual bottom safe area inset (home indicator) instead of hardcoded Platform values
+  const bottomInset = Math.max(insets.bottom, 8);
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: isDark ? '#60A5FA' : '#2563EB',
-        tabBarInactiveTintColor: isDark ? '#6B7280' : '#9CA3AF',
+        tabBarActiveTintColor: isDark ? TAB_BAR.activeTintDark : TAB_BAR.activeTintLight,
+        tabBarInactiveTintColor: isDark ? TAB_BAR.inactiveTintDark : TAB_BAR.inactiveTintLight,
         tabBarStyle: {
           backgroundColor: isDark ? '#111827' : '#fff',
           borderTopColor: isDark ? '#1F2937' : '#F3F4F6',
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 88 : 64,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
+          height: 56 + bottomInset,
+          paddingBottom: bottomInset,
           paddingTop: 8,
           elevation: 0,
           shadowColor: '#000',
