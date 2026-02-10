@@ -20,7 +20,8 @@
     "eas:build:ios:dev": "eas build --platform ios --profile development",
     "eas:build:android:prod": "eas build --platform android --profile production",
     "eas:build:android:prod-aab": "eas build --platform android --profile production-aab",
-    "eas:build:ios:prod": "eas build --platform ios --profile production"
+    "eas:build:ios:prod": "eas build --platform ios --profile production",
+    "build:android:apk": "bun expo prebuild --platform android --clean && cd android && NODE_ENV=production ./gradlew assembleRelease"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
