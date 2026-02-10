@@ -26,6 +26,24 @@ function formatNumber(n: number): string {
   return `${n}`;
 }
 
+function formatLatency(ms: number): string {
+  if (ms <= 0) return '–';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function formatRate(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return `${Math.round(n)}`;
+}
+
+function latencyColor(ms: number): string {
+  if (ms <= 0) return '#9CA3AF';
+  if (ms < 200) return '#22C55E';
+  if (ms < 500) return '#FBBC04';
+  return '#EF4444';
+}
+
 function ThroughputRow({
   icon,
   label,
@@ -61,11 +79,13 @@ function ThroughputRow({
         >
           {value}
         </Text>
-        <Text
-          style={[styles.statUnit, { color: isDark ? '#6B7280' : '#9CA3AF' }]}
-        >
-          {unit}
-        </Text>
+        {unit ? (
+          <Text
+            style={[styles.statUnit, { color: isDark ? '#6B7280' : '#9CA3AF' }]}
+          >
+            {unit}
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -163,6 +183,100 @@ function SensorBreakdown({
   );
 }
 
+function LatencyBar({
+  throughput,
+  isDark,
+}: {
+  throughput: SensorThroughput;
+  isDark: boolean;
+}) {
+  const { avgLatencyMs, minLatencyMs, maxLatencyMs, p95LatencyMs } = throughput;
+  if (avgLatencyMs <= 0) return null;
+
+  const avgColor = latencyColor(avgLatencyMs);
+  const p95Color = latencyColor(p95LatencyMs);
+
+  return (
+    <View style={styles.latencyContainer}>
+      <Text
+        style={[
+          styles.breakdownTitle,
+          { color: isDark ? '#9CA3AF' : '#6B7280' },
+        ]}
+      >
+        LATENCY
+      </Text>
+      <View style={styles.latencyRow}>
+        <View style={styles.latencyItem}>
+          <Text
+            style={[
+              styles.latencyLabel,
+              { color: isDark ? '#6B7280' : '#9CA3AF' },
+            ]}
+          >
+            avg
+          </Text>
+          <Text style={[styles.latencyValue, { color: avgColor }]}>
+            {formatLatency(avgLatencyMs)}
+          </Text>
+        </View>
+        <View style={styles.latencyDivider} />
+        <View style={styles.latencyItem}>
+          <Text
+            style={[
+              styles.latencyLabel,
+              { color: isDark ? '#6B7280' : '#9CA3AF' },
+            ]}
+          >
+            min
+          </Text>
+          <Text
+            style={[
+              styles.latencyValue,
+              { color: latencyColor(minLatencyMs) },
+            ]}
+          >
+            {formatLatency(minLatencyMs)}
+          </Text>
+        </View>
+        <View style={styles.latencyDivider} />
+        <View style={styles.latencyItem}>
+          <Text
+            style={[
+              styles.latencyLabel,
+              { color: isDark ? '#6B7280' : '#9CA3AF' },
+            ]}
+          >
+            p95
+          </Text>
+          <Text style={[styles.latencyValue, { color: p95Color }]}>
+            {formatLatency(p95LatencyMs)}
+          </Text>
+        </View>
+        <View style={styles.latencyDivider} />
+        <View style={styles.latencyItem}>
+          <Text
+            style={[
+              styles.latencyLabel,
+              { color: isDark ? '#6B7280' : '#9CA3AF' },
+            ]}
+          >
+            max
+          </Text>
+          <Text
+            style={[
+              styles.latencyValue,
+              { color: latencyColor(maxLatencyMs) },
+            ]}
+          >
+            {formatLatency(maxLatencyMs)}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export function SensorDataOverlay() {
   const { status, throughput } = useSensorStreamingStatus();
   const colorScheme = useColorScheme();
@@ -189,15 +303,33 @@ export function SensorDataOverlay() {
   const bgColor = isDark ? 'rgba(17, 24, 39, 0.95)' : 'rgba(255, 255, 255, 0.97)';
   const borderColor = isDark ? 'rgba(55, 65, 81, 0.6)' : 'rgba(229, 231, 235, 0.8)';
 
-  const expandedHeight = expandAnim.interpolate({
+  const hasLatency = throughput.avgLatencyMs > 0;
+  const hasQueueDepth = throughput.hasPendingQueue;
+
+  // Dynamically compute expanded height based on content
+  let expandedHeight = 150; // base height for core stats
+  if (hasLatency) expandedHeight += 58; // latency section
+  if (hasQueueDepth) expandedHeight += 28; // queue depth row
+  if (throughput.totalBatchesFailed > 0) expandedHeight += 28; // failed row
+  if (throughput.bytesPerSecond > 0) expandedHeight += 28; // throughput rate row
+  expandedHeight += 60; // sensor breakdown
+
+  const expandedHeightInterp = expandAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 190],
+    outputRange: [0, expandedHeight],
   });
 
   const chevronRotation = expandAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '180deg'],
   });
+
+  const rateColor =
+    status === 'live'
+      ? '#22C55E'
+      : status === 'draining'
+        ? '#FBBC04'
+        : '#EF4444';
 
   return (
     <View
@@ -221,23 +353,22 @@ export function SensorDataOverlay() {
             style={[
               styles.ratePill,
               {
-                backgroundColor:
-                  status === 'live' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                backgroundColor: rateColor + '26',
               },
             ]}
           >
             <MaterialIcons
               name="arrow-upward"
               size={11}
-              color={status === 'live' ? '#22C55E' : '#EF4444'}
+              color={rateColor}
             />
             <Text
               style={[
                 styles.rateText,
-                { color: status === 'live' ? '#22C55E' : '#EF4444' },
+                { color: rateColor },
               ]}
             >
-              {throughput.readingsPerSecond}/s
+              {formatRate(throughput.readingsPerSecond)}/s
             </Text>
           </View>
           <View
@@ -248,9 +379,26 @@ export function SensorDataOverlay() {
           >
             <MaterialIcons name="cloud-upload" size={11} color="#3B82F6" />
             <Text style={[styles.rateText, { color: '#3B82F6' }]}>
-              {throughput.batchesSentPerSecond}/s
+              {formatRate(throughput.batchesSentPerSecond)}/s
             </Text>
           </View>
+
+          {/* Inline queue depth badge (compact header) */}
+          {hasQueueDepth && (
+            <View
+              style={[
+                styles.ratePill,
+                { backgroundColor: 'rgba(251, 188, 4, 0.15)' },
+              ]}
+            >
+              <MaterialIcons name="schedule" size={11} color="#FBBC04" />
+              <Text style={[styles.rateText, { color: '#FBBC04' }]}>
+                {throughput.queueDepth > 999
+                  ? `${(throughput.queueDepth / 1000).toFixed(1)}k`
+                  : throughput.queueDepth}
+              </Text>
+            </View>
+          )}
         </View>
 
         <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
@@ -264,7 +412,7 @@ export function SensorDataOverlay() {
 
       {/* Expandable Details */}
       <Animated.View
-        style={[styles.expandedContent, { height: expandedHeight }]}
+        style={[styles.expandedContent, { height: expandedHeightInterp }]}
       >
         <View style={styles.expandedInner}>
           <View
@@ -298,6 +446,32 @@ export function SensorDataOverlay() {
             color="#3B82F6"
             isDark={isDark}
           />
+
+          {/* Data throughput rate */}
+          {throughput.bytesPerSecond > 0 && (
+            <ThroughputRow
+              icon="speed"
+              label="Throughput"
+              value={formatBytes(throughput.bytesPerSecond)}
+              unit="/s"
+              color="#06B6D4"
+              isDark={isDark}
+            />
+          )}
+
+          {/* Queue depth (pending batches in SQLite) */}
+          {hasQueueDepth && (
+            <ThroughputRow
+              icon="schedule"
+              label="Queued (offline)"
+              value={formatNumber(throughput.queueDepth)}
+              unit="batches"
+              color="#FBBC04"
+              isDark={isDark}
+            />
+          )}
+
+          {/* Failed batches */}
           {throughput.totalBatchesFailed > 0 && (
             <ThroughputRow
               icon="error-outline"
@@ -309,6 +483,10 @@ export function SensorDataOverlay() {
             />
           )}
 
+          {/* Latency breakdown */}
+          <LatencyBar throughput={throughput} isDark={isDark} />
+
+          {/* Sensor type breakdown */}
           <SensorBreakdown throughput={throughput} isDark={isDark} />
         </View>
       </Animated.View>
@@ -330,7 +508,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
     minWidth: 170,
-    maxWidth: 220,
+    maxWidth: 240,
     zIndex: 10,
   },
   header: {
@@ -345,6 +523,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexWrap: 'wrap',
   },
   ratePill: {
     flexDirection: 'row',
@@ -439,5 +618,34 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '500',
     fontVariant: ['tabular-nums'],
+  },
+  latencyContainer: {
+    marginTop: 4,
+  },
+  latencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  latencyItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  latencyLabel: {
+    fontSize: 8,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 1,
+  },
+  latencyValue: {
+    fontSize: 11,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  latencyDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: 'rgba(156, 163, 175, 0.2)',
   },
 });

@@ -31,6 +31,16 @@ const STATUS_CONFIG: Record<
     borderDark: 'rgba(52, 168, 83, 0.4)',
     pulse: true,
   },
+  draining: {
+    icon: 'sync',
+    label: 'SYNC',
+    color: '#FBBC04',
+    bgLight: 'rgba(255, 255, 255, 0.97)',
+    bgDark: 'rgba(17, 24, 39, 0.95)',
+    borderLight: 'rgba(251, 188, 4, 0.3)',
+    borderDark: 'rgba(251, 188, 4, 0.4)',
+    pulse: true,
+  },
   error: {
     icon: 'sensors-off',
     label: 'PAUSED',
@@ -58,6 +68,19 @@ function formatRate(n: number): string {
   return `${n}`;
 }
 
+function formatLatency(ms: number): string {
+  if (ms <= 0) return '–';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function latencyColor(ms: number): string {
+  if (ms <= 0) return '#9CA3AF';
+  if (ms < 200) return '#34A853'; // green – excellent
+  if (ms < 500) return '#FBBC04'; // yellow – acceptable
+  return '#EA4335'; // red – high
+}
+
 export function StreamingStatusIndicator() {
   const { status, throughput, consecutiveFailures } =
     useSensorStreamingStatus();
@@ -65,10 +88,11 @@ export function StreamingStatusIndicator() {
   const isDark = colorScheme === 'dark';
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const dotScaleAnim = useRef(new Animated.Value(1)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
 
   const config = STATUS_CONFIG[status];
 
-  // Pulsing dot animation for live status
+  // Pulsing dot animation for live / draining status
   useEffect(() => {
     if (config.pulse) {
       const dotPulse = Animated.loop(
@@ -114,12 +138,38 @@ export function StreamingStatusIndicator() {
     }
   }, [config.pulse, pulseAnim, dotScaleAnim]);
 
+  // Spin animation for draining/sync icon
+  useEffect(() => {
+    if (status === 'draining') {
+      const spin = Animated.loop(
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      );
+      spin.start();
+      return () => spin.stop();
+    } else {
+      spinAnim.setValue(0);
+    }
+  }, [status, spinAnim]);
+
   // Don't show anything when streaming is off
   if (status === 'off') {
     return null;
   }
 
   const hasActivity = throughput.readingsPerSecond > 0;
+  const showQueueBadge =
+    throughput.hasPendingQueue && throughput.queueDepth > 0;
+  const showLatency =
+    (status === 'live' || status === 'draining') && throughput.avgLatencyMs > 0;
+
+  const spinRotation = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   return (
     <View
@@ -150,19 +200,30 @@ export function StreamingStatusIndicator() {
           <View style={[styles.dot, { backgroundColor: config.color }]} />
         </View>
 
-        <MaterialIcons
-          name={config.icon}
-          size={13}
-          color={config.color}
-          style={styles.statusIcon}
-        />
+        {status === 'draining' ? (
+          <Animated.View style={{ transform: [{ rotate: spinRotation }] }}>
+            <MaterialIcons
+              name={config.icon}
+              size={13}
+              color={config.color}
+              style={styles.statusIcon}
+            />
+          </Animated.View>
+        ) : (
+          <MaterialIcons
+            name={config.icon}
+            size={13}
+            color={config.color}
+            style={styles.statusIcon}
+          />
+        )}
         <Text style={[styles.statusLabel, { color: config.color }]}>
           {config.label}
         </Text>
       </View>
 
-      {/* Right: throughput stats (only when live and has activity) */}
-      {status === 'live' && hasActivity && (
+      {/* Right: throughput stats (only when live/draining and has activity) */}
+      {(status === 'live' || status === 'draining') && hasActivity && (
         <>
           <View
             style={[
@@ -212,6 +273,53 @@ export function StreamingStatusIndicator() {
               ]}
             >
               /s
+            </Text>
+          </View>
+        </>
+      )}
+
+      {/* Latency indicator */}
+      {showLatency && (
+        <>
+          <View
+            style={[
+              styles.separator,
+              { backgroundColor: isDark ? '#374151' : '#E5E7EB' },
+            ]}
+          />
+          <View style={styles.rateBadge}>
+            <MaterialIcons
+              name="speed"
+              size={9}
+              color={latencyColor(throughput.avgLatencyMs)}
+            />
+            <Text
+              style={[
+                styles.rateValue,
+                { color: latencyColor(throughput.avgLatencyMs) },
+              ]}
+            >
+              {formatLatency(throughput.avgLatencyMs)}
+            </Text>
+          </View>
+        </>
+      )}
+
+      {/* Queue depth badge (when batches are pending in SQLite) */}
+      {showQueueBadge && (
+        <>
+          <View
+            style={[
+              styles.separator,
+              { backgroundColor: isDark ? '#374151' : '#E5E7EB' },
+            ]}
+          />
+          <View style={styles.queueBadge}>
+            <MaterialIcons name="schedule" size={9} color="#FBBC04" />
+            <Text style={styles.queueText}>
+              {throughput.queueDepth > 999
+                ? `${(throughput.queueDepth / 1000).toFixed(1)}k`
+                : throughput.queueDepth}
             </Text>
           </View>
         </>
@@ -311,6 +419,17 @@ const styles = StyleSheet.create({
   rateUnit: {
     fontSize: 9,
     fontWeight: '500',
+  },
+  queueBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  queueText: {
+    fontSize: 10,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+    color: '#FBBC04',
   },
   errorSection: {
     flexDirection: 'row',

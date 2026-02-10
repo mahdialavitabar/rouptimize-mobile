@@ -17,15 +17,150 @@ import {
 } from './SensorStreamingStatusContext';
 import { SensorBatch, SensorReading } from './types';
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function parseNumber(value: string | undefined, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Generate a compact, collision-resistant batch ID.
+ * Uses device ID prefix + timestamp (base36) + random suffix (hex).
+ */
+function makeBatchId(deviceId: string, prefix = ''): string {
+  return `${deviceId}_${prefix}${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 10)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Minimum flush interval (ms) – never flush faster than this */
+const MIN_FLUSH_INTERVAL_MS = 50;
+
+/** Maximum flush interval (ms) – never wait longer than this */
+const MAX_FLUSH_INTERVAL_MS = 1_000;
+
+/** Flush immediately when the buffer exceeds this many readings */
+const FLUSH_SIZE_THRESHOLD = 200;
+
+/** Target batch size for optimal ClickHouse throughput */
+const TARGET_BATCH_SIZE = 100;
+
+/** How often to run SQLite maintenance (ms) – 1 hour */
+const MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
+
+/** Minimum time between successive adaptive interval adjustments (ms) */
+const INTERVAL_ADJUST_COOLDOWN_MS = 2_000;
+
+// ---------------------------------------------------------------------------
+// Hook Options
+// ---------------------------------------------------------------------------
+
 interface UseAuthenticatedSensorStreamingOptions {
   /** Whether the user is actively navigating. Sensor streaming only runs when true. */
   isNavigating: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Double Buffer
+// ---------------------------------------------------------------------------
+
+/**
+ * A zero-copy double-buffer for sensor readings.
+ *
+ * Instead of splicing an array (which allocates a new array and copies elements
+ * on every flush), we maintain two buffers and atomically swap them. The "write"
+ * buffer accumulates incoming readings while the "read" buffer is being flushed.
+ *
+ * This eliminates per-flush allocation overhead at high sample rates (50-100 Hz
+ * × 2 sensors = 100-200 readings/s).
+ */
+class DoubleBuffer {
+  private bufA: SensorReading[] = [];
+  private bufB: SensorReading[] = [];
+  private writeIndex: 0 | 1 = 0;
+
+  /** Push a reading into the current write buffer */
+  push(reading: SensorReading): void {
+    if (this.writeIndex === 0) {
+      this.bufA.push(reading);
+    } else {
+      this.bufB.push(reading);
+    }
+  }
+
+  /** Number of readings in the current write buffer */
+  get length(): number {
+    return this.writeIndex === 0 ? this.bufA.length : this.bufB.length;
+  }
+
+  /**
+   * Swap buffers and return the previously-active buffer's contents.
+   * The returned array is handed off to the caller; we clear and reuse it
+   * on the *next* swap.
+   */
+  swap(): SensorReading[] {
+    if (this.writeIndex === 0) {
+      // Swap: write → B, return A
+      this.writeIndex = 1;
+      this.bufB.length = 0; // clear B for reuse
+      return this.bufA;
+    } else {
+      // Swap: write → A, return B
+      this.writeIndex = 0;
+      this.bufA.length = 0; // clear A for reuse
+      return this.bufB;
+    }
+  }
+
+  /** Clear both buffers */
+  clear(): void {
+    this.bufA.length = 0;
+    this.bufB.length = 0;
+    this.writeIndex = 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive Flush Interval
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the optimal flush interval based on the current data rate.
+ *
+ * Strategy:
+ * - At low rates (< 10 readings/s):  flush less often → bigger batches, fewer HTTP calls
+ * - At medium rates (10-100/s):      flush every ~200ms → ~20-50 readings/batch
+ * - At high rates (> 100/s):         flush every ~100ms → keep batch size manageable
+ * - Always clamp between MIN and MAX
+ */
+function computeAdaptiveInterval(
+  readingsPerSecond: number,
+  currentIntervalMs: number,
+): number {
+  if (readingsPerSecond <= 0) {
+    // No data yet – use a conservative interval
+    return MAX_FLUSH_INTERVAL_MS;
+  }
+
+  // Target: one batch should contain roughly TARGET_BATCH_SIZE readings
+  const idealIntervalMs = (TARGET_BATCH_SIZE / readingsPerSecond) * 1000;
+
+  // Smooth towards the ideal (exponential moving average to avoid jitter)
+  const alpha = 0.3;
+  const smoothed = currentIntervalMs * (1 - alpha) + idealIntervalMs * alpha;
+
+  // Clamp
+  return Math.max(MIN_FLUSH_INTERVAL_MS, Math.min(MAX_FLUSH_INTERVAL_MS, Math.round(smoothed)));
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 /**
  * Hook to manage authenticated sensor streaming during navigation.
@@ -35,6 +170,13 @@ interface UseAuthenticatedSensorStreamingOptions {
  * 2. User has granted sensor permission
  * 3. isNavigating is true (driver is actively navigating a route)
  * 4. EXPO_PUBLIC_SENSOR_STREAMING_ENABLED is 'true'
+ *
+ * Enhancements over the previous implementation:
+ * - **Double buffering**: Zero-copy buffer swap instead of Array.splice
+ * - **Adaptive flush interval**: Automatically adjusts based on data rate
+ * - **Size-based flush**: Flushes immediately when buffer exceeds threshold
+ * - **Latency & queue depth reporting**: Feeds circuit breaker / UX indicators
+ * - **Periodic maintenance**: SQLite cleanup + WAL checkpoint
  *
  * @param options.isNavigating - Whether navigation mode is active
  */
@@ -50,6 +192,8 @@ export function useAuthenticatedSensorStreaming(
     reportReadings,
     reportBatchSent,
     reportBatchFailed,
+    reportLatency,
+    reportQueueDepth,
     setOff,
   } = useSensorStreamingStatus();
   const startedRef = useRef(false);
@@ -179,7 +323,8 @@ export function useAuthenticatedSensorStreaming(
     startedRef.current = true;
     console.log('[SensorStreaming] Starting - navigation mode active');
 
-    const batchIntervalMs = parseNumber(
+    // ── Configuration ────────────────────────────────────────────────────
+    const initialBatchIntervalMs = parseNumber(
       process.env.EXPO_PUBLIC_SENSOR_BATCH_MS,
       200,
     );
@@ -197,39 +342,130 @@ export function useAuthenticatedSensorStreaming(
       3,
     );
 
-    const buffer: SensorReading[] = [];
-    let flushTimer: ReturnType<typeof setInterval> | undefined;
-    let cleanupTimer: ReturnType<typeof setInterval> | undefined;
+    // ── State ────────────────────────────────────────────────────────────
+    const doubleBuffer = new DoubleBuffer();
+    let flushTimer: ReturnType<typeof setTimeout> | undefined;
+    let maintenanceTimer: ReturnType<typeof setInterval> | undefined;
+    let currentFlushInterval = Math.max(MIN_FLUSH_INTERVAL_MS, initialBatchIntervalMs);
+    let lastIntervalAdjust = 0;
+    let readingsInLastSecond = 0;
+    let rateWindowStart = Date.now();
+    let stopped = false;
 
     const queue = new SensorQueue();
     let sensorClient: ClickHouseSensorClient | undefined;
     let reader: SensorReader | undefined;
 
+    // ── Flush function ───────────────────────────────────────────────────
+    const scheduleFlush = () => {
+      if (stopped) return;
+      flushTimer = setTimeout(flush, currentFlushInterval);
+    };
+
+    const flush = () => {
+      if (stopped) return;
+
+      const readings = doubleBuffer.swap();
+      if (readings.length === 0) {
+        scheduleFlush();
+        return;
+      }
+
+      const locationCount = readings.filter(
+        (r) => r.sensor === 'location',
+      ).length;
+      const accelCount = readings.filter(
+        (r) => r.sensor === 'accel',
+      ).length;
+      const gyroCount = readings.filter((r) => r.sensor === 'gyro').length;
+
+      if (readings.length > 10 || locationCount > 0) {
+        console.log(
+          `[SensorStreaming] Flushing batch: ${readings.length} readings ` +
+            `(accel: ${accelCount}, gyro: ${gyroCount}, gps: ${locationCount}) ` +
+            `[interval: ${currentFlushInterval}ms]`,
+        );
+      }
+
+      const deviceId = currentDeviceId;
+      const batch: SensorBatch = {
+        batchId: makeBatchId(deviceId),
+        deviceId,
+        driverId: user?.driverId,
+        vehicleId: currentVehicleId,
+        readings,
+      };
+
+      sensorClient?.enqueueAndPublishBatch(batch).then(
+        () => {
+          reportBatchSent(readings.length);
+        },
+        () => {
+          reportBatchFailed();
+        },
+      );
+
+      // ── Adaptive interval adjustment ─────────────────────────────────
+      const now = Date.now();
+      if (now - lastIntervalAdjust > INTERVAL_ADJUST_COOLDOWN_MS) {
+        const elapsed = (now - rateWindowStart) / 1000;
+        if (elapsed > 0) {
+          const rate = readingsInLastSecond / elapsed;
+          currentFlushInterval = computeAdaptiveInterval(
+            rate,
+            currentFlushInterval,
+          );
+        }
+
+        // Reset rate measurement window
+        readingsInLastSecond = 0;
+        rateWindowStart = now;
+        lastIntervalAdjust = now;
+      }
+
+      scheduleFlush();
+    };
+
+    // ── Immediate flush on buffer size threshold ─────────────────────────
+    const maybeSizeFlush = () => {
+      if (doubleBuffer.length >= FLUSH_SIZE_THRESHOLD && flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = undefined;
+        flush();
+      }
+    };
+
+    // ── Startup ──────────────────────────────────────────────────────────
+    let currentDeviceId = '';
+    let currentVehicleId: string | undefined;
+
     const start = async () => {
-      const deviceId = await getOrCreateDeviceId();
-      let vehicleId: string | undefined;
+      currentDeviceId = await getOrCreateDeviceId();
       try {
         const assignment = await vehicleAssignmentService.getMyAssignment();
-        vehicleId = assignment.vehicleId;
-        console.log('[SensorStreaming] Found vehicle assignment:', vehicleId);
+        currentVehicleId = assignment.vehicleId;
+        console.log('[SensorStreaming] Found vehicle assignment:', currentVehicleId);
       } catch (e) {
         console.warn('[SensorStreaming] Failed to get vehicle assignment', e);
       }
 
       console.log(
-        '[SensorStreaming] Starting with deviceId (authenticated):',
-        deviceId,
+        `[SensorStreaming] Starting with deviceId: ${currentDeviceId}, ` +
+          `sampleRate: ${sampleRateHz}Hz, initialInterval: ${currentFlushInterval}ms`,
       );
+
       await queue.init();
 
       sensorClient = new ClickHouseSensorClient({
         url: clickhouseUrl,
         user: clickhouseUser,
         password: clickhousePassword,
-        deviceId,
+        deviceId: currentDeviceId,
         queue,
         onSendSuccess: reportSuccess,
         onSendFailure: reportFailure,
+        onLatency: reportLatency,
+        onQueueDepth: reportQueueDepth,
       });
       sensorClient.start();
       sensorClientRef.current = sensorClient;
@@ -237,7 +473,7 @@ export function useAuthenticatedSensorStreaming(
       // Start background location tracking for when app is minimized
       await startBackgroundLocationTracking({
         driverId: user?.driverId,
-        vehicleId,
+        vehicleId: currentVehicleId,
         clickhouseUrl,
         clickhouseUser,
         clickhousePassword,
@@ -246,9 +482,12 @@ export function useAuthenticatedSensorStreaming(
       reader = new SensorReader({
         sampleRateHz,
         onReading: (r) => {
-          buffer.push(r);
+          doubleBuffer.push(r);
+          readingsInLastSecond++;
           // Report individual reading to throughput tracker
           reportReadings(1, r.sensor as 'accel' | 'gyro' | 'location');
+          // Check if we need an immediate size-based flush
+          maybeSizeFlush();
         },
         onLocationError: (error) => {
           console.warn('[SensorStreaming] Location error:', error);
@@ -264,59 +503,66 @@ export function useAuthenticatedSensorStreaming(
       await reader.start();
       readerRef.current = reader;
 
-      flushTimer = setInterval(
-        () => {
-          const readings = buffer.splice(0, buffer.length);
-          if (readings.length === 0) {
-            return;
-          }
+      // Start the flush loop
+      scheduleFlush();
 
-          const locationCount = readings.filter(
-            (r) => r.sensor === 'location',
-          ).length;
-          const accelCount = readings.filter(
-            (r) => r.sensor === 'accel',
-          ).length;
-          const gyroCount = readings.filter((r) => r.sensor === 'gyro').length;
-          console.log(
-            `[SensorStreaming] Sending batch: ${readings.length} readings (location: ${locationCount}, accel: ${accelCount}, gyro: ${gyroCount})`,
-          );
+      // ── Periodic maintenance ─────────────────────────────────────────
+      // Runs SQLite cleanup (acked/failed retention) + WAL checkpoint
+      maintenanceTimer = setInterval(() => {
+        void queue.performMaintenance({
+          ackedRetentionMs: cleanupDays * 24 * 60 * 60 * 1000,
+          vacuum: false, // WAL checkpoint only, not full VACUUM
+        });
+      }, MAINTENANCE_INTERVAL_MS);
 
-          const batch: SensorBatch = {
-            batchId: `${deviceId}_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`,
-            deviceId,
-            driverId: user?.driverId,
-            vehicleId,
-            readings,
-          };
-
-          sensorClient?.enqueueAndPublishBatch(batch).then(
-            () => {
-              reportBatchSent(readings.length);
-            },
-            () => {
-              reportBatchFailed();
-            },
-          );
-        },
-        Math.max(50, batchIntervalMs),
-      );
-
-      cleanupTimer = setInterval(
-        () => {
-          void queue.deleteAckedOlderThan(cleanupDays);
-        },
-        60 * 60 * 1000,
-      );
+      // Run an initial maintenance pass after 30s (don't block startup)
+      setTimeout(() => {
+        void queue.performMaintenance({
+          ackedRetentionMs: cleanupDays * 24 * 60 * 60 * 1000,
+          vacuum: false,
+        });
+      }, 30_000);
     };
 
     void start();
 
+    // ── Cleanup ──────────────────────────────────────────────────────────
     cleanupRef.current = () => {
-      flushTimer && clearInterval(flushTimer);
-      cleanupTimer && clearInterval(cleanupTimer);
+      stopped = true;
+
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = undefined;
+      }
+      if (maintenanceTimer) {
+        clearInterval(maintenanceTimer);
+        maintenanceTimer = undefined;
+      }
+
+      // Perform a final flush of any remaining buffered readings
+      const remaining = doubleBuffer.swap();
+      if (remaining.length > 0 && sensorClient && currentDeviceId) {
+        const finalBatch: SensorBatch = {
+          batchId: makeBatchId(currentDeviceId, 'final_'),
+          deviceId: currentDeviceId,
+          driverId: user?.driverId,
+          vehicleId: currentVehicleId,
+          readings: remaining,
+        };
+        // Fire-and-forget: we're shutting down, but try to persist
+        void sensorClient.enqueueAndPublishBatch(finalBatch).catch(() => {
+          console.warn(
+            `[SensorStreaming] Failed to flush ${remaining.length} final readings`,
+          );
+        });
+      }
+
+      doubleBuffer.clear();
       reader?.stop();
       sensorClient?.stop();
+
+      // Close the queue gracefully (flushes pending inserts + WAL checkpoint)
+      void queue.close();
     };
 
     return () => {
@@ -335,6 +581,8 @@ export function useAuthenticatedSensorStreaming(
     reportReadings,
     reportBatchSent,
     reportBatchFailed,
+    reportLatency,
+    reportQueueDepth,
     setOff,
   ]);
 }

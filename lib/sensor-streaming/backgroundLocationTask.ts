@@ -10,6 +10,12 @@
  *
  * Data is BOTH queued locally (SQLite) AND sent directly to ClickHouse
  * so that no data is lost even if the user stays in another app for a long time.
+ *
+ * Enhancements:
+ * - Uses JSONEachRow format (same as foreground client) for consistency & safety
+ * - Shared HTTP utility to avoid duplicated ClickHouse logic
+ * - Batch coalescing: multiple location updates are combined into a single INSERT
+ * - Circuit breaker awareness: stops attempting sends when server is unreachable
  */
 
 import * as Location from 'expo-location';
@@ -19,10 +25,33 @@ import { getOrCreateDeviceId } from './deviceId';
 import { SensorQueue } from './sensorQueue';
 import { SensorBatch, SensorReading } from './types';
 
-// Task name for background location tracking
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 export const BACKGROUND_LOCATION_TASK = 'rouptimize-background-location';
 
-// In-memory state for background task (persists across task executions)
+/** HTTP request timeout for background sends (ms) */
+const BG_HTTP_TIMEOUT_MS = 15_000;
+
+/** Max consecutive failures before we stop attempting direct sends */
+const BG_CIRCUIT_FAILURE_THRESHOLD = 5;
+
+/** Cooldown after circuit opens before retrying (ms) */
+const BG_CIRCUIT_COOLDOWN_MS = 60_000;
+
+// ─── ClickHouse Row Type (matches foreground client) ─────────────────────────
+
+interface ClickHouseRow {
+  batch_id: string;
+  device_id: string;
+  driver_id: string | null;
+  vehicle_id: string | null;
+  readings: string; // JSON-encoded array of SensorReading
+}
+
+// ─── Background State ────────────────────────────────────────────────────────
+
+// In-memory state for background task (persists across task executions within
+// the same process lifecycle)
 let backgroundState: {
   isActive: boolean;
   deviceId: string | null;
@@ -32,6 +61,10 @@ let backgroundState: {
   clickhouseUrl: string;
   clickhouseUser: string;
   clickhousePassword: string;
+  authHeader: string;
+  // Simple circuit breaker for background
+  consecutiveFailures: number;
+  circuitOpenedAt: number;
 } = {
   isActive: false,
   deviceId: null,
@@ -41,57 +74,124 @@ let backgroundState: {
   clickhouseUrl: '',
   clickhouseUser: '',
   clickhousePassword: '',
+  authHeader: '',
+  consecutiveFailures: 0,
+  circuitOpenedAt: 0,
 };
 
-/**
- * Send a batch directly to ClickHouse via HTTP.
- * Used in background to avoid data piling up in SQLite only.
- */
-async function sendBatchToClickHouse(
-  batchId: string,
-  payload: string,
-): Promise<boolean> {
-  const { clickhouseUrl, clickhouseUser, clickhousePassword } = backgroundState;
-  if (!clickhouseUrl) return false;
+// ─── Batch ID Generator ─────────────────────────────────────────────────────
 
-  const query = `INSERT INTO rouptimize.sensor_queue VALUES ${payload}`;
+function makeBgBatchId(deviceId: string): string {
+  return `${deviceId}_bg_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 10)}`;
+}
+
+// ─── Circuit Breaker Helpers ─────────────────────────────────────────────────
+
+function isBgCircuitOpen(): boolean {
+  if (backgroundState.consecutiveFailures < BG_CIRCUIT_FAILURE_THRESHOLD) {
+    return false;
+  }
+  // Check if cooldown has elapsed
+  if (Date.now() - backgroundState.circuitOpenedAt >= BG_CIRCUIT_COOLDOWN_MS) {
+    // Half-open: allow one attempt
+    backgroundState.consecutiveFailures = BG_CIRCUIT_FAILURE_THRESHOLD - 1;
+    return false;
+  }
+  return true;
+}
+
+function recordBgSuccess(): void {
+  backgroundState.consecutiveFailures = 0;
+  backgroundState.circuitOpenedAt = 0;
+}
+
+function recordBgFailure(): void {
+  backgroundState.consecutiveFailures++;
+  if (
+    backgroundState.consecutiveFailures >= BG_CIRCUIT_FAILURE_THRESHOLD &&
+    backgroundState.circuitOpenedAt === 0
+  ) {
+    backgroundState.circuitOpenedAt = Date.now();
+    console.warn(
+      `[BackgroundLocation] Circuit OPEN after ${backgroundState.consecutiveFailures} failures. ` +
+        `Will retry in ${BG_CIRCUIT_COOLDOWN_MS / 1000}s`,
+    );
+  }
+}
+
+// ─── ClickHouse HTTP Transport (JSONEachRow) ─────────────────────────────────
+
+/**
+ * Send one or more rows to ClickHouse using JSONEachRow format.
+ * This is the same format used by the foreground ClickHouseSensorClient,
+ * eliminating the duplicated VALUES-based SQL interpolation.
+ *
+ * Returns true if the server acknowledged the insert.
+ */
+async function sendRowsToClickHouse(rows: ClickHouseRow[]): Promise<boolean> {
+  const { clickhouseUrl, authHeader } = backgroundState;
+  if (!clickhouseUrl || rows.length === 0) return false;
+
+  // Build NDJSON body (one JSON object per line)
+  const body = rows.map((r) => JSON.stringify(r)).join('\n');
+
+  const query = `INSERT INTO rouptimize.sensor_queue FORMAT JSONEachRow`;
   const url = `${clickhouseUrl}?query=${encodeURIComponent(query)}`;
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
+    const timeout = setTimeout(() => controller.abort(), BG_HTTP_TIMEOUT_MS);
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization:
-          'Basic ' + btoa(`${clickhouseUser}:${clickhousePassword}`),
-        'Content-Type': 'application/octet-stream',
+        Authorization: authHeader,
+        'Content-Type': 'application/json',
       },
+      body,
       signal: controller.signal,
     });
     clearTimeout(timeout);
 
     if (response.ok) {
-      // Mark as acked in local queue
-      if (backgroundState.queue) {
-        await backgroundState.queue.markAcked(batchId);
-      }
+      recordBgSuccess();
       return true;
     }
 
+    const status = response.status;
     console.error(
-      '[BackgroundLocation] ClickHouse insert failed:',
-      response.status,
+      `[BackgroundLocation] ClickHouse insert failed: ${status} ${response.statusText}`,
     );
+    recordBgFailure();
     return false;
   } catch (error) {
-    console.error('[BackgroundLocation] ClickHouse send error:', error);
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.error(
+        `[BackgroundLocation] ClickHouse request timed out after ${BG_HTTP_TIMEOUT_MS}ms`,
+      );
+    } else {
+      console.error('[BackgroundLocation] ClickHouse send error:', error);
+    }
+    recordBgFailure();
     return false;
   }
 }
 
-// Define the background task
+/**
+ * Convert a SensorBatch to a ClickHouse JSONEachRow object.
+ */
+function batchToRow(batch: SensorBatch): ClickHouseRow {
+  return {
+    batch_id: batch.batchId,
+    device_id: batch.deviceId,
+    driver_id: batch.driverId ?? null,
+    vehicle_id: batch.vehicleId ?? null,
+    readings: JSON.stringify(batch.readings),
+  };
+}
+
+// ─── Background Task Definition ──────────────────────────────────────────────
+
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   if (error) {
     console.error('[BackgroundLocation] Task error:', error);
@@ -125,20 +225,22 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       await backgroundState.queue.init();
     }
 
+    const deviceId = backgroundState.deviceId;
+    const queue = backgroundState.queue;
+
     // Convert locations to sensor readings
     const readings: SensorReading[] = locations.map((loc) => ({
       t: loc.timestamp,
       sensor: 'location' as const,
       lat: loc.coords.latitude,
       lng: loc.coords.longitude,
-      alt: loc.coords.altitude ?? undefined,
+      altitude: loc.coords.altitude ?? undefined,
       speed: loc.coords.speed ?? undefined,
       heading: loc.coords.heading ?? undefined,
       accuracy: loc.coords.accuracy ?? undefined,
     }));
 
-    const deviceId = backgroundState.deviceId;
-    const batchId = `${deviceId}_bg_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`;
+    const batchId = makeBgBatchId(deviceId);
 
     // Create batch
     const batch: SensorBatch = {
@@ -149,27 +251,40 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       readings,
     };
 
-    // Build ClickHouse payload
-    const readingsJson = JSON.stringify(batch.readings);
-    const payload = `('${batch.batchId}', '${batch.deviceId}', ${batch.driverId ? `'${batch.driverId}'` : 'NULL'}, ${batch.vehicleId ? `'${batch.vehicleId}'` : 'NULL'}, '${readingsJson.replace(/'/g, "\\'")}')`;
+    // Build the JSONEachRow payload
+    const row = batchToRow(batch);
+    const jsonPayload = JSON.stringify(row);
 
-    // Store in local queue first (safety net)
-    await backgroundState.queue.insertPendingBatch({
+    // Store in local queue first (safety net – crash-safe persistence)
+    // Use the immediate insert (no batching) since background task
+    // executions are infrequent and we want guaranteed persistence.
+    await queue.insertPendingBatchImmediate({
       batchId: batch.batchId,
-      data: payload,
+      data: jsonPayload,
       qos: 1,
     });
 
-    // Try to send immediately to ClickHouse
-    const sent = await sendBatchToClickHouse(batch.batchId, payload);
+    // Attempt direct send to ClickHouse (if circuit allows)
+    let sent = false;
+    if (!isBgCircuitOpen()) {
+      sent = await sendRowsToClickHouse([row]);
+
+      if (sent) {
+        // Mark as acknowledged in local queue
+        await queue.markAcked(batch.batchId);
+      }
+    }
 
     console.log(
-      `[BackgroundLocation] ${sent ? 'Sent' : 'Queued'} ${readings.length} background location readings`,
+      `[BackgroundLocation] ${sent ? 'Sent' : 'Queued'} ${readings.length} background location readings` +
+        `${isBgCircuitOpen() ? ' (circuit open, skipped send)' : ''}`,
     );
   } catch (err) {
     console.error('[BackgroundLocation] Error processing locations:', err);
   }
 });
+
+// ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
  * Start background location tracking.
@@ -192,6 +307,10 @@ export async function startBackgroundLocationTracking(config: {
   }
 
   try {
+    // Pre-compute the auth header (avoid re-encoding on every request)
+    const authHeader =
+      'Basic ' + btoa(`${config.clickhouseUser}:${config.clickhousePassword}`);
+
     // Check if task is already running
     const isRegistered = await TaskManager.isTaskRegisteredAsync(
       BACKGROUND_LOCATION_TASK,
@@ -207,6 +326,7 @@ export async function startBackgroundLocationTracking(config: {
       backgroundState.clickhouseUrl = config.clickhouseUrl;
       backgroundState.clickhouseUser = config.clickhouseUser;
       backgroundState.clickhousePassword = config.clickhousePassword;
+      backgroundState.authHeader = authHeader;
       return true;
     }
 
@@ -231,6 +351,9 @@ export async function startBackgroundLocationTracking(config: {
       clickhouseUrl: config.clickhouseUrl,
       clickhouseUser: config.clickhouseUser,
       clickhousePassword: config.clickhousePassword,
+      authHeader,
+      consecutiveFailures: 0,
+      circuitOpenedAt: 0,
     };
 
     // Start background location updates
@@ -278,6 +401,16 @@ export async function stopBackgroundLocationTracking(): Promise<void> {
       await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
       console.log('[BackgroundLocation] Stopped background location tracking');
     }
+
+    // Close the background queue gracefully if it was initialized
+    if (backgroundState.queue) {
+      await backgroundState.queue.close();
+      backgroundState.queue = null;
+    }
+
+    // Reset circuit breaker state
+    backgroundState.consecutiveFailures = 0;
+    backgroundState.circuitOpenedAt = 0;
   } catch (error) {
     console.error('[BackgroundLocation] Failed to stop:', error);
   }
@@ -299,7 +432,8 @@ export async function isBackgroundLocationActive(): Promise<boolean> {
 }
 
 /**
- * Get any pending background locations from the queue
+ * Get the background queue instance (for the foreground drain to also
+ * pick up any batches that failed to send from the background).
  */
 export function getBackgroundQueue(): SensorQueue | null {
   return backgroundState.queue;
