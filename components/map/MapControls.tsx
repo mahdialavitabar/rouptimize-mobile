@@ -1,11 +1,11 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRef } from 'react';
 import {
-  Animated,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-  useColorScheme,
+    Animated,
+    StyleSheet,
+    TouchableOpacity,
+    View,
+    useColorScheme,
 } from 'react-native';
 
 import { Text } from '@/components/ui/text';
@@ -238,15 +238,24 @@ function StatusPill({
   label: string;
   highlight?: boolean;
 }) {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
   return (
     <View style={[styles.statusPill, highlight && styles.statusPillHighlight]}>
       <View style={[styles.statusDot, { backgroundColor: color }]} />
       <Text
-        style={[styles.statusCount, highlight && styles.statusCountHighlight]}
+        style={[
+          styles.statusCount,
+          isDark && styles.statusCountDark,
+          highlight && styles.statusCountHighlight,
+        ]}
       >
         {count}
       </Text>
-      <Text style={styles.statusLabel}>{label}</Text>
+      <Text style={[styles.statusLabel, isDark && styles.statusLabelDark]}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -441,12 +450,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#374151',
   },
+  statusCountDark: {
+    color: '#E5E7EB',
+  },
   statusCountHighlight: {
     color: '#F59E0B',
   },
   statusLabel: {
     fontSize: 12,
     color: '#6B7280',
+  },
+  statusLabelDark: {
+    color: '#9CA3AF',
   },
   viewAllButton: {
     flexDirection: 'row',

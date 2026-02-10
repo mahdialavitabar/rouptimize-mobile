@@ -2,55 +2,62 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  RefreshControl,
-  TouchableOpacity,
-  View,
-  useColorScheme,
+    ActivityIndicator,
+    FlatList,
+    RefreshControl,
+    TouchableOpacity,
+    View,
+    useColorScheme,
 } from 'react-native';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { FilterChip } from '@/components/ui/filter-chip';
 import { Text } from '@/components/ui/text';
-import { useMissions } from '@/lib/api/hooks';
-import type { Mission, MissionStatus } from '@/lib/api/types';
-import { formatTimeWindow } from '@/lib/utils';
+import { useRoutes } from '@/lib/api/hooks';
+import type { Route, RouteStatus } from '@/lib/api/types';
+import { formatDistance, formatDuration } from '@/lib/utils';
 
 // Status badge configuration
 const statusConfig: Record<
-  MissionStatus,
+  RouteStatus,
   { label: string; color: string; bgColor: string; icon: string }
 > = {
-  unassigned: {
-    label: 'Unassigned',
+  draft: {
+    label: 'Draft',
     color: '#6B7280',
     bgColor: '#F3F4F6',
-    icon: 'help-outline',
+    icon: 'edit',
   },
-  assigned: {
-    label: 'Assigned',
+  planned: {
+    label: 'Planned',
     color: '#3B82F6',
     bgColor: '#DBEAFE',
-    icon: 'assignment',
+    icon: 'event',
   },
-  inProgress: {
+  in_progress: {
     label: 'In Progress',
     color: '#F59E0B',
     bgColor: '#FEF3C7',
     icon: 'local-shipping',
   },
-  delivered: {
-    label: 'Delivered',
+  completed: {
+    label: 'Completed',
     color: '#10B981',
     bgColor: '#D1FAE5',
     icon: 'check-circle',
   },
+  delayed: {
+    label: 'Delayed',
+    color: '#EF4444',
+    bgColor: '#FEE2E2',
+    icon: 'warning',
+  },
 };
 
-// Filter options for driver
-type FilterOption = 'all' | 'assigned' | 'inProgress' | 'delivered';
+// Filter options
+type FilterOption = 'all' | 'planned' | 'in_progress' | 'completed';
 
-function StatusBadge({ status }: { status: MissionStatus }) {
+function StatusBadge({ status }: { status: RouteStatus }) {
   const config = statusConfig[status];
 
   return (
@@ -73,14 +80,11 @@ function StatusBadge({ status }: { status: MissionStatus }) {
   );
 }
 
-function MissionCard({
-  mission,
-  onPress,
-}: {
-  mission: Mission;
-  onPress: () => void;
-}) {
+function RouteCard({ route, onPress }: { route: Route; onPress: () => void }) {
   const colorScheme = useColorScheme();
+  // Count missions - prefer routeMissions, fallback to missions
+  const missionCount =
+    route.routeMissions?.length ?? route.missions?.length ?? 0;
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
@@ -88,66 +92,85 @@ function MissionCard({
         <CardHeader className="pb-2">
           <View className="flex-row items-center justify-between">
             <CardTitle className="flex-1" numberOfLines={1}>
-              {mission.customerName}
+              {route.name}
             </CardTitle>
-            <StatusBadge status={mission.status} />
+            <StatusBadge status={route.status} />
           </View>
         </CardHeader>
         <CardContent>
           <View className="gap-2">
-            {/* Address */}
-            <View className="flex-row items-start gap-2">
-              <MaterialIcons
-                name="location-on"
-                size={16}
-                color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-              />
-              <Text
-                className="text-muted-foreground flex-1 text-sm"
-                numberOfLines={2}
-              >
-                {mission.address}
+            {/* Description */}
+            {route.description && (
+              <Text className="text-muted-foreground text-sm" numberOfLines={2}>
+                {route.description}
               </Text>
-            </View>
+            )}
 
-            {/* Phone */}
-            <View className="flex-row items-center gap-2">
-              <MaterialIcons
-                name="phone"
-                size={16}
-                color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-              />
-              <Text className="text-muted-foreground text-sm">
-                {mission.phone}
-              </Text>
-            </View>
+            {/* Stats row */}
+            <View className="flex-row items-center gap-4 mt-1">
+              {/* Missions count */}
+              <View className="flex-row items-center gap-1">
+                <MaterialIcons
+                  name="assignment"
+                  size={16}
+                  color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                />
+                <Text className="text-muted-foreground text-sm">
+                  {missionCount} {missionCount === 1 ? 'stop' : 'stops'}
+                </Text>
+              </View>
 
-            {/* Time Window */}
-            <View className="flex-row items-center gap-2">
-              <MaterialIcons
-                name="schedule"
-                size={16}
-                color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-              />
-              <Text className="text-muted-foreground text-sm">
-                {formatTimeWindow(mission.startTimeWindow)} -{' '}
-                {formatTimeWindow(mission.endTimeWindow)}
-              </Text>
+              {/* Distance */}
+              <View className="flex-row items-center gap-1">
+                <MaterialIcons
+                  name="straighten"
+                  size={16}
+                  color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                />
+                <Text className="text-muted-foreground text-sm">
+                  {formatDistance(route.totalDistanceMeters)}
+                </Text>
+              </View>
+
+              {/* Duration */}
+              <View className="flex-row items-center gap-1">
+                <MaterialIcons
+                  name="schedule"
+                  size={16}
+                  color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                />
+                <Text className="text-muted-foreground text-sm">
+                  {formatDuration(route.totalDurationSeconds)}
+                </Text>
+              </View>
             </View>
 
             {/* Vehicle (if assigned) */}
-            {mission.vehiclePlate && (
-              <View className="flex-row items-center gap-2">
+            {route.vehicle && (
+              <View className="flex-row items-center gap-2 mt-1">
                 <MaterialIcons
                   name="local-shipping"
                   size={16}
                   color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
                 />
                 <Text className="text-muted-foreground text-sm">
-                  {mission.vehiclePlate}
+                  {route.vehicle.plateNumber}
+                  {route.vehicle.model && ` - ${route.vehicle.model}`}
                 </Text>
               </View>
             )}
+
+            {/* Date */}
+            <View className="flex-row items-center gap-2">
+              <MaterialIcons
+                name="calendar-today"
+                size={16}
+                color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+              />
+              <Text className="text-muted-foreground text-sm">
+                {new Date(route.date).toLocaleDateString()}
+              </Text>
+            </View>
           </View>
         </CardContent>
       </Card>
@@ -155,48 +178,7 @@ function MissionCard({
   );
 }
 
-function FilterChip({
-  label,
-  isActive,
-  onPress,
-}: {
-  label: string;
-  isActive: boolean;
-  onPress: () => void;
-}) {
-  const colorScheme = useColorScheme();
-
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      className="mr-2 rounded-full px-4 py-2"
-      style={{
-        backgroundColor: isActive
-          ? colorScheme === 'dark'
-            ? '#3B82F6'
-            : '#2563EB'
-          : colorScheme === 'dark'
-            ? '#374151'
-            : '#F3F4F6',
-      }}
-    >
-      <Text
-        className="text-sm font-medium"
-        style={{
-          color: isActive
-            ? '#fff'
-            : colorScheme === 'dark'
-              ? '#D1D5DB'
-              : '#4B5563',
-        }}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-export default function MissionsScreen() {
+export default function RoutesScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const [filter, setFilter] = useState<FilterOption>('all');
@@ -205,23 +187,23 @@ export default function MissionsScreen() {
   // Get today's date in YYYY-MM-DD format
   const today = new Date().toISOString().split('T')[0];
 
-  const { missions, loading, error, refetch } = useMissions({ date: today });
+  const { routes, loading, error, refetch } = useRoutes({ date: today });
 
-  // Filter missions based on selected filter
-  const filteredMissions = useMemo(() => {
-    if (filter === 'all') return missions;
-    return missions.filter((m) => m.status === filter);
-  }, [missions, filter]);
+  // Filter routes based on selected filter
+  const filteredRoutes = useMemo(() => {
+    if (filter === 'all') return routes;
+    return routes.filter((r) => r.status === filter);
+  }, [routes, filter]);
 
-  // Count missions by status
+  // Count routes by status
   const statusCounts = useMemo(() => {
     return {
-      all: missions.length,
-      assigned: missions.filter((m) => m.status === 'assigned').length,
-      inProgress: missions.filter((m) => m.status === 'inProgress').length,
-      delivered: missions.filter((m) => m.status === 'delivered').length,
+      all: routes.length,
+      planned: routes.filter((r) => r.status === 'planned').length,
+      in_progress: routes.filter((r) => r.status === 'in_progress').length,
+      completed: routes.filter((r) => r.status === 'completed').length,
     };
-  }, [missions]);
+  }, [routes]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -229,8 +211,8 @@ export default function MissionsScreen() {
     setRefreshing(false);
   };
 
-  const navigateToMission = (id: string) => {
-    router.push(`/(drawer)/(tabs)/missions/${id}` as any);
+  const navigateToRoute = (id: string) => {
+    router.push(`/(tabs)/routes/${id}` as any);
   };
 
   if (loading && !refreshing) {
@@ -240,7 +222,7 @@ export default function MissionsScreen() {
           size="large"
           color={colorScheme === 'dark' ? '#fff' : '#3B82F6'}
         />
-        <Text className="mt-4 text-muted-foreground">Loading missions...</Text>
+        <Text className="mt-4 text-muted-foreground">Loading routes...</Text>
       </View>
     );
   }
@@ -254,7 +236,7 @@ export default function MissionsScreen() {
           color={colorScheme === 'dark' ? '#EF4444' : '#DC2626'}
         />
         <Text className="mt-4 text-center text-lg font-medium text-destructive">
-          Failed to load missions
+          Failed to load routes
         </Text>
         <Text className="mt-2 text-center text-muted-foreground">
           {error.message}
@@ -278,15 +260,12 @@ export default function MissionsScreen() {
           showsHorizontalScrollIndicator={false}
           data={[
             { key: 'all', label: `All (${statusCounts.all})` },
-            { key: 'assigned', label: `Assigned (${statusCounts.assigned})` },
+            { key: 'planned', label: `Planned (${statusCounts.planned})` },
             {
-              key: 'inProgress',
-              label: `In Progress (${statusCounts.inProgress})`,
+              key: 'in_progress',
+              label: `Active (${statusCounts.in_progress})`,
             },
-            {
-              key: 'delivered',
-              label: `Delivered (${statusCounts.delivered})`,
-            },
+            { key: 'completed', label: `Done (${statusCounts.completed})` },
           ]}
           renderItem={({ item }) => (
             <FilterChip
@@ -299,15 +278,12 @@ export default function MissionsScreen() {
         />
       </View>
 
-      {/* Mission list */}
+      {/* Routes list */}
       <FlatList
-        data={filteredMissions}
+        data={filteredRoutes}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <MissionCard
-            mission={item}
-            onPress={() => navigateToMission(item.id)}
-          />
+          <RouteCard route={item} onPress={() => navigateToRoute(item.id)} />
         )}
         refreshControl={
           <RefreshControl
@@ -319,22 +295,22 @@ export default function MissionsScreen() {
         ListEmptyComponent={
           <View className="flex-1 items-center justify-center py-20">
             <MaterialIcons
-              name="inbox"
+              name="route"
               size={64}
               color={colorScheme === 'dark' ? '#4B5563' : '#9CA3AF'}
             />
             <Text className="mt-4 text-lg font-medium text-muted-foreground">
-              No missions found
+              No routes found
             </Text>
             <Text className="mt-2 text-center text-muted-foreground px-8">
               {filter === 'all'
-                ? "You don't have any missions for today"
-                : `No ${filter} missions`}
+                ? "You don't have any routes for today"
+                : `No ${filter.replace('_', ' ')} routes`}
             </Text>
           </View>
         }
         contentContainerStyle={
-          filteredMissions.length === 0 ? { flex: 1 } : { paddingVertical: 8 }
+          filteredRoutes.length === 0 ? { flex: 1 } : { paddingVertical: 8 }
         }
       />
     </View>

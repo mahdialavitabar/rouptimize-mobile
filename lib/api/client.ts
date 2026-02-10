@@ -33,8 +33,10 @@ const getBaseUrl = (): string => {
   return 'http://localhost:4000';
 };
 
-// Log the resolved base URL for debugging
-console.log('[API Client] Base URL:', getBaseUrl());
+// Log the resolved base URL for debugging (development only)
+if (__DEV__) {
+  console.log('[API Client] Base URL:', getBaseUrl());
+}
 
 // Callback for 401 responses - allows AuthContext to sync state
 let onUnauthorizedCallback: (() => void) | null = null;

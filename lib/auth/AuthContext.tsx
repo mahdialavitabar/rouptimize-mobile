@@ -1,26 +1,26 @@
 import { useRouter, useSegments } from 'expo-router';
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type ReactNode,
 } from 'react';
 import {
-  ActivityIndicator,
-  AppState,
-  AppStateStatus,
-  View,
+    ActivityIndicator,
+    AppState,
+    AppStateStatus,
+    View,
 } from 'react-native';
 import {
-  clearAuthTokens,
-  getAuthToken,
-  setAuthTokens,
-  setOnUnauthorized,
-  tryRefreshTokens,
+    clearAuthTokens,
+    getAuthToken,
+    setAuthTokens,
+    setOnUnauthorized,
+    tryRefreshTokens,
 } from '../api/client';
 import type { JwtPayload } from '../api/types';
 
@@ -236,7 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isAuthenticated && !inAuthGroup) {
       (router as any).replace('/(auth)/login');
     } else if (isAuthenticated && inAuthGroup) {
-      (router as any).replace('/(drawer)/(tabs)/(home)');
+      (router as any).replace('/(tabs)/(home)');
     }
   }, [token, segments, isLoading, router]);
 

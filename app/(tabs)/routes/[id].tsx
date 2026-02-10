@@ -1,40 +1,40 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import Mapbox, {
-  Camera,
-  LineLayer,
-  LocationPuck,
-  MapView,
-  ShapeSource,
+    Camera,
+    LineLayer,
+    LocationPuck,
+    MapView,
+    ShapeSource,
 } from '@rnmapbox/maps';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  Linking,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-  useColorScheme,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Linking,
+    ScrollView,
+    StyleSheet,
+    TouchableOpacity,
+    View,
+    useColorScheme,
 } from 'react-native';
 
 import {
-  EnhancedMissionMarker,
-  MapControls,
-  RouteEndpointMarker,
-  SelectedMissionCard,
+    EnhancedMissionMarker,
+    MapControls,
+    RouteEndpointMarker,
+    SelectedMissionCard,
 } from '@/components/map/index';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
 import { useRoute } from '@/lib/api/hooks';
 import type { Mission, MissionStatus } from '@/lib/api/types';
 import {
-  openNativeNavigation,
-  openNativeNavigationForRoute,
+    openNativeNavigation,
+    openNativeNavigationForRoute,
 } from '@/lib/navigation/openNativeNavigation';
 import { formatDistance, formatDuration, formatTimeWindow } from '@/lib/utils';
 
@@ -267,7 +267,7 @@ export default function RouteMapScreen() {
   // Navigate to mission details
   const goToMissionDetails = useCallback(
     (mission: Mission) => {
-      router.push(`/(drawer)/(tabs)/missions/${mission.id}` as any);
+      router.push(`/(tabs)/missions/${mission.id}` as any);
     },
     [router],
   );

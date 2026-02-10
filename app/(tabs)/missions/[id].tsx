@@ -3,14 +3,15 @@ import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  ScrollView,
-  TouchableOpacity,
-  View,
-  useColorScheme,
+    ActivityIndicator,
+    Alert,
+    Linking,
+    ScrollView,
+    TouchableOpacity,
+    View,
+    useColorScheme,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -151,6 +152,7 @@ export default function MissionDetailScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const [isUpdating, setIsUpdating] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const { mission, loading, error, refetch } = useMission(id);
   const { updateStatus } = useUpdateMissionStatus();
@@ -397,7 +399,7 @@ export default function MissionDetailScreen() {
               <TouchableOpacity
                 onPress={() =>
                   router.push(
-                    `/(drawer)/(tabs)/routes/${mission.routeId}` as any,
+                    `/(tabs)/routes/${mission.routeId}` as any,
                   )
                 }
                 className="flex-row items-center justify-between py-2 border-t border-border"
@@ -425,7 +427,10 @@ export default function MissionDetailScreen() {
 
       {/* Bottom action button */}
       {canUpdateStatus && (
-        <View className="border-t border-border bg-background px-4 py-4">
+        <View
+          className="border-t border-border bg-background px-4 pt-4"
+          style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+        >
           <Button
             onPress={handleStatusUpdate}
             disabled={isUpdating}

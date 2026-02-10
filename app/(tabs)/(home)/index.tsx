@@ -2,11 +2,11 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo } from 'react';
 import {
-  RefreshControl,
-  ScrollView,
-  TouchableOpacity,
-  View,
-  useColorScheme,
+    RefreshControl,
+    ScrollView,
+    TouchableOpacity,
+    View,
+    useColorScheme,
 } from 'react-native';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +15,18 @@ import { useMissions, useRoutes } from '@/lib/api/hooks';
 import { useAuth } from '@/lib/auth';
 import { useSensorPermission } from '@/lib/sensor-streaming/SensorPermissionContext';
 import { formatTimeWindow } from '@/lib/utils';
+
+/**
+ * Returns a time-of-day greeting string based on the current hour.
+ */
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return 'Good night';
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  if (hour < 21) return 'Good evening';
+  return 'Good night';
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -94,13 +106,16 @@ export default function HomeScreen() {
   };
 
   const navigateToMission = (id: string) => {
-    router.push(`/(drawer)/(tabs)/missions/${id}` as any);
+    router.push(`/(tabs)/missions/${id}` as any);
   };
+
+  const greeting = getGreeting();
 
   return (
     <ScrollView
       className="flex-1 bg-background"
-      contentContainerStyle={{ padding: 16 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+      showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
       }
@@ -108,7 +123,9 @@ export default function HomeScreen() {
       {/* Welcome Card */}
       <Card className="mb-4 bg-primary">
         <CardContent className="py-6">
-          <Text className="text-primary-foreground text-lg">Welcome back,</Text>
+          <Text className="text-primary-foreground text-lg">
+            {greeting},{' '}
+          </Text>
           <Text className="text-primary-foreground text-2xl font-bold">
             {user?.username || 'Driver'}
           </Text>
@@ -128,7 +145,8 @@ export default function HomeScreen() {
         {/* Total Missions */}
         <TouchableOpacity
           className="flex-1 min-w-[45%]"
-          onPress={() => router.push('/(drawer)/(tabs)/missions' as any)}
+          onPress={() => router.push('/(tabs)/missions' as any)}
+          activeOpacity={0.7}
         >
           <Card>
             <CardContent className="py-4 items-center">
@@ -146,7 +164,11 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         {/* Delivered */}
-        <View className="flex-1 min-w-[45%]">
+        <TouchableOpacity
+          className="flex-1 min-w-[45%]"
+          onPress={() => router.push('/(tabs)/missions' as any)}
+          activeOpacity={0.7}
+        >
           <Card>
             <CardContent className="py-4 items-center">
               <View className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900 items-center justify-center mb-2">
@@ -158,10 +180,14 @@ export default function HomeScreen() {
               <Text className="text-muted-foreground text-sm">Delivered</Text>
             </CardContent>
           </Card>
-        </View>
+        </TouchableOpacity>
 
         {/* In Progress */}
-        <View className="flex-1 min-w-[45%]">
+        <TouchableOpacity
+          className="flex-1 min-w-[45%]"
+          onPress={() => router.push('/(tabs)/missions' as any)}
+          activeOpacity={0.7}
+        >
           <Card>
             <CardContent className="py-4 items-center">
               <View className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900 items-center justify-center mb-2">
@@ -177,12 +203,13 @@ export default function HomeScreen() {
               <Text className="text-muted-foreground text-sm">In Progress</Text>
             </CardContent>
           </Card>
-        </View>
+        </TouchableOpacity>
 
         {/* Routes */}
         <TouchableOpacity
           className="flex-1 min-w-[45%]"
-          onPress={() => router.push('/(drawer)/(tabs)/routes' as any)}
+          onPress={() => router.push('/(tabs)/routes' as any)}
+          activeOpacity={0.7}
         >
           <Card>
             <CardContent className="py-4 items-center">
@@ -250,6 +277,7 @@ export default function HomeScreen() {
             </View>
             <TouchableOpacity
               onPress={() => navigateToMission(nextMission.id)}
+              activeOpacity={0.8}
               className="mt-2 flex-row items-center justify-center bg-primary rounded-lg py-3"
             >
               <MaterialIcons name="navigation" size={20} color="#fff" />
@@ -285,17 +313,28 @@ export default function HomeScreen() {
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
-        <CardContent className="gap-2">
+        <CardContent className="gap-0">
           <TouchableOpacity
-            onPress={() => router.push('/(drawer)/(tabs)/routes' as any)}
+            onPress={() => router.push('/(tabs)/routes' as any)}
+            activeOpacity={0.7}
             className="flex-row items-center py-3 border-b border-border"
           >
-            <MaterialIcons
-              name="map"
-              size={24}
-              color={colorScheme === 'dark' ? '#3B82F6' : '#2563EB'}
-            />
-            <Text className="ml-3 flex-1 text-foreground">
+            <View
+              className="w-9 h-9 rounded-full items-center justify-center mr-3"
+              style={{
+                backgroundColor:
+                  colorScheme === 'dark'
+                    ? 'rgba(59, 130, 246, 0.15)'
+                    : 'rgba(37, 99, 235, 0.1)',
+              }}
+            >
+              <MaterialIcons
+                name="map"
+                size={20}
+                color={colorScheme === 'dark' ? '#60A5FA' : '#2563EB'}
+              />
+            </View>
+            <Text className="flex-1 text-foreground font-medium">
               View Today's Routes
             </Text>
             <MaterialIcons
@@ -305,15 +344,28 @@ export default function HomeScreen() {
             />
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => router.push('/(drawer)/(tabs)/missions' as any)}
+            onPress={() => router.push('/(tabs)/missions' as any)}
+            activeOpacity={0.7}
             className="flex-row items-center py-3 border-b border-border"
           >
-            <MaterialIcons
-              name="assignment"
-              size={24}
-              color={colorScheme === 'dark' ? '#3B82F6' : '#2563EB'}
-            />
-            <Text className="ml-3 flex-1 text-foreground">All Missions</Text>
+            <View
+              className="w-9 h-9 rounded-full items-center justify-center mr-3"
+              style={{
+                backgroundColor:
+                  colorScheme === 'dark'
+                    ? 'rgba(59, 130, 246, 0.15)'
+                    : 'rgba(37, 99, 235, 0.1)',
+              }}
+            >
+              <MaterialIcons
+                name="assignment"
+                size={20}
+                color={colorScheme === 'dark' ? '#60A5FA' : '#2563EB'}
+              />
+            </View>
+            <Text className="flex-1 text-foreground font-medium">
+              All Missions
+            </Text>
             <MaterialIcons
               name="chevron-right"
               size={24}
@@ -321,15 +373,28 @@ export default function HomeScreen() {
             />
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => router.push('/(drawer)/(tabs)/tracking' as any)}
+            onPress={() => router.push('/(tabs)/tracking' as any)}
+            activeOpacity={0.7}
             className="flex-row items-center py-3"
           >
-            <MaterialIcons
-              name="gps-fixed"
-              size={24}
-              color={colorScheme === 'dark' ? '#3B82F6' : '#2563EB'}
-            />
-            <Text className="ml-3 flex-1 text-foreground">Live Tracking</Text>
+            <View
+              className="w-9 h-9 rounded-full items-center justify-center mr-3"
+              style={{
+                backgroundColor:
+                  colorScheme === 'dark'
+                    ? 'rgba(16, 185, 129, 0.15)'
+                    : 'rgba(16, 185, 129, 0.1)',
+              }}
+            >
+              <MaterialIcons
+                name="gps-fixed"
+                size={20}
+                color={colorScheme === 'dark' ? '#34D399' : '#059669'}
+              />
+            </View>
+            <Text className="flex-1 text-foreground font-medium">
+              Live Tracking
+            </Text>
             <MaterialIcons
               name="chevron-right"
               size={24}

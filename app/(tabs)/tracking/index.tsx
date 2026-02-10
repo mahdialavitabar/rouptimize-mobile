@@ -1,9 +1,9 @@
 import Mapbox, {
-  Camera,
-  LineLayer,
-  LocationPuck,
-  MapView,
-  ShapeSource,
+    Camera,
+    LineLayer,
+    LocationPuck,
+    MapView,
+    ShapeSource,
 } from '@rnmapbox/maps';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
@@ -13,11 +13,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Linking, StyleSheet, View, useColorScheme } from 'react-native';
 
 import {
-  EnhancedMissionMarker,
-  MapControls,
-  MissionInfoPanel,
-  RouteEndpointMarker,
-  SelectedMissionCard,
+    EnhancedMissionMarker,
+    MapControls,
+    MissionInfoPanel,
+    RouteEndpointMarker,
+    SelectedMissionCard,
 } from '@/components/map/index';
 import { StreamingStatusIndicator } from '@/components/map/StreamingStatusIndicator';
 import { useMissions, useRoutes } from '@/lib/api/hooks';
@@ -253,13 +253,13 @@ export default function TrackingScreen() {
 
   const viewMissionDetails = useCallback(
     (mission: Mission) => {
-      router.push(`/(drawer)/(tabs)/missions/${mission.id}` as any);
+      router.push(`/(tabs)/missions/${mission.id}` as any);
     },
     [router],
   );
 
   const viewAllMissions = useCallback(() => {
-    router.push('/(drawer)/(tabs)/missions' as any);
+    router.push('/(tabs)/missions' as any);
   }, [router]);
 
   const centerCoordinate = userLocation ?? DEFAULT_CENTER;
